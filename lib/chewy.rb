@@ -163,6 +163,8 @@ module Chewy
         end
         client_configuration.delete(:prefix) # used by Chewy, not relevant to Elasticsearch::Client
         block = client_configuration[:transport_options].try(:delete, :proc)
+        # TODO(Ray): add x-option-id here
+        puts "block=#{block}"
         ::Elasticsearch::Client.new(client_configuration, &block)
       end
     end
