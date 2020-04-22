@@ -163,8 +163,15 @@ module Chewy
         end
         client_configuration.delete(:prefix) # used by Chewy, not relevant to Elasticsearch::Client
         block = client_configuration[:transport_options].try(:delete, :proc)
-        # TODO(Ray): add x-option-id here
+        # "x-opaque-id" Is a request-level ID that our code can pass in to a ElasticSearch request.
+        # It can be later used to retrieve a list of tasks under that opaque id and cancel them.
+        # Having this opaque ID is important for performance reasons because clients commonly consecutively type in
+        # a lot of criteria at once. When they do, the latter requests should cancel the previous requests.
+        #
+        # https://www.elastic.co/guide/en/elasticsearch/reference/master/tasks.html
+        # https://www.elastic.co/guide/en/elasticsearch/reference/current/tasks.html#_identifying_running_tasks
         puts "block=#{block}"
+        puts "client_configuration=#{client_configuration}"
         ::Elasticsearch::Client.new(client_configuration, &block)
       end
     end
