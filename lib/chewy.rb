@@ -149,7 +149,7 @@ module Chewy
 
     # Main elasticsearch-ruby client instance
     #
-    def client(hosts=nil)
+    def client(hosts=nil, x_opaque_id = nil)
       # We are changing this to support multiple clusters in chewy.
       if hosts
         thread_cache_key = "chewy_client_#{hosts}"
