@@ -815,6 +815,8 @@ module Chewy
         if performed?
           total
         else
+          # TODO(Max) put @x_opaque_id in the perform_request"
+          # Ray tried to put it in Chewy.client but that will affect all queries to a Chewy thread.
           Chewy.client(_indices.first.hosts_name).count(only(WHERE_STORAGES).render(replace_post_filter: true))['count']
         end
       rescue Elasticsearch::Transport::Transport::Errors::NotFound
@@ -984,6 +986,8 @@ module Chewy
         ActiveSupport::Notifications.instrument 'search_query.chewy',
           notification_payload(request: request_body) do
             begin
+              # TODO(Max) put @x_opaque_id in the perform_request
+              # Ray tried to put it in Chewy.client but that will affect all queries to a Chewy thread.
               Chewy.client(_indices.first.hosts_name).search(request_body)
             rescue Elasticsearch::Transport::Transport::Errors::NotFound
               {}
@@ -1021,7 +1025,7 @@ module Chewy
           Elasticsearch::API::Utils.__listify(request[:type]),
           '_query'
         )
-        Chewy.client(_indices.first.hosts_name, @x_opaque_id).perform_request(Elasticsearch::API::HTTP_DELETE, path, {}, request[:body]).body
+        Chewy.client(_indices.first.hosts_name.perform_request(Elasticsearch::API::HTTP_DELETE, path, {}, request[:body]).body
       end
 
       def loader
