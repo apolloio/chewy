@@ -173,7 +173,7 @@ module Chewy
         if x_opaque_id
           client_configuration[:transport_options] = client_configuration[:transport_options] || {}
           client_configuration[:transport_options][:headers] = client_configuration[:transport_options][:headers] || {}
-          client_configuration[:transport_options][:headers][:x_opaque_id] = '1231231'
+          client_configuration[:transport_options][:headers][:x_opaque_id] = '123123312'
         end
         puts "block=#{block}"
         puts "client_configuration=#{client_configuration}"
