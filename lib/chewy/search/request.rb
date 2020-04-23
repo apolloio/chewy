@@ -816,6 +816,7 @@ module Chewy
           puts 'already performed!!'
           total
         else
+          puts "sending!"
           Chewy.client(_indices.first.hosts_name, @x_opaque_id).count(only(WHERE_STORAGES).render(replace_post_filter: true))['count']
         end
       rescue Elasticsearch::Transport::Transport::Errors::NotFound

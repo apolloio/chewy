@@ -156,6 +156,7 @@ module Chewy
       else
         thread_cache_key = "chewy_client"
       end
+      puts 'thread cache key'
       Thread.current[thread_cache_key.to_sym] ||= begin
         client_configuration = configuration.deep_dup
         if hosts
