@@ -813,11 +813,9 @@ module Chewy
       # @return [Integer] total hits count
       def count
         if performed?
-          puts 'already performed!!'
           total
         else
-          puts "sending!"
-          Chewy.client(_indices.first.hosts_name, @x_opaque_id).count(only(WHERE_STORAGES).render(replace_post_filter: true))['count']
+          Chewy.client(_indices.first.hosts_name).count(only(WHERE_STORAGES).render(replace_post_filter: true))['count']
         end
       rescue Elasticsearch::Transport::Transport::Errors::NotFound
         0
@@ -949,7 +947,7 @@ module Chewy
             if Runtime.version < '5.0'
               delete_by_query_plugin(request_body)
             else
-              Chewy.client(_indices.first.hosts_name, @x_opaque_id).delete_by_query(request_body)
+              Chewy.client(_indices.first.hosts_name).delete_by_query(request_body)
             end
           end
       end
@@ -981,10 +979,12 @@ module Chewy
 
       def perform(additional = {})
         request_body = render.merge(additional)
+        request_body[:opaque_id] = @x_opaque_id if @x_opaque_id
+        puts "request_body=#{request_body}"
         ActiveSupport::Notifications.instrument 'search_query.chewy',
           notification_payload(request: request_body) do
             begin
-              Chewy.client(_indices.first.hosts_name, @x_opaque_id).search(request_body)
+              Chewy.client(_indices.first.hosts_name).search(request_body)
             rescue Elasticsearch::Transport::Transport::Errors::NotFound
               {}
             end

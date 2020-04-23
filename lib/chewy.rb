@@ -149,14 +149,13 @@ module Chewy
 
     # Main elasticsearch-ruby client instance
     #
-    def client(hosts=nil, x_opaque_id = nil)
+    def client(hosts=nil)
       # We are changing this to support multiple clusters in chewy.
       if hosts
         thread_cache_key = "chewy_client_#{hosts}"
       else
         thread_cache_key = "chewy_client"
       end
-      puts 'thread cache key'
       Thread.current[thread_cache_key.to_sym] ||= begin
         client_configuration = configuration.deep_dup
         if hosts
@@ -164,20 +163,6 @@ module Chewy
         end
         client_configuration.delete(:prefix) # used by Chewy, not relevant to Elasticsearch::Client
         block = client_configuration[:transport_options].try(:delete, :proc)
-        # "x-opaque-id" Is a request-level ID that our code can pass in to a ElasticSearch request.
-        # It can be later used to retrieve a list of tasks under that opaque id and cancel them.
-        # Having this opaque ID is important for performance reasons because clients commonly consecutively type in
-        # a lot of criteria at once. When they do, the latter requests should cancel the previous requests.
-        #
-        # https://www.elastic.co/guide/en/elasticsearch/reference/master/tasks.html
-        # https://www.elastic.co/guide/en/elasticsearch/reference/current/tasks.html#_identifying_running_tasks
-        if x_opaque_id
-          client_configuration[:transport_options] = client_configuration[:transport_options] || {}
-          client_configuration[:transport_options][:headers] = client_configuration[:transport_options][:headers] || {}
-          client_configuration[:transport_options][:headers][:x_opaque_id] = x_opaque_id
-        end
-        puts "block=#{block}"
-        puts "client_configuration=#{client_configuration}"
         ::Elasticsearch::Client.new(client_configuration, &block)
       end
     end
