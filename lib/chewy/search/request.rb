@@ -87,6 +87,10 @@ module Chewy
         @parameters ||= Parameters.new
       end
 
+      def set_x_opaque_id(x_opaque_id)
+        @x_opaque_id ||= x_opaque_id
+      end
+
       # Compare two scopes or scope with a collection of wrappers.
       # If other is a collection it performs the request to fetch
       # data from ES.
@@ -808,11 +812,10 @@ module Chewy
       #
       # @return [Integer] total hits count
       def count
-        x_opaque_id = nil
         if performed?
           total
         else
-          Chewy.client(_indices.first.hosts_name, x_opaque_id).count(only(WHERE_STORAGES).render(replace_post_filter: true))['count']
+          Chewy.client(_indices.first.hosts_name, @x_opaque_id).count(only(WHERE_STORAGES).render(replace_post_filter: true))['count']
         end
       rescue Elasticsearch::Transport::Transport::Errors::NotFound
         0
@@ -939,13 +942,12 @@ module Chewy
       # @return [Hash] the result of query execution
       def delete_all(refresh: true)
         request_body = only(WHERE_STORAGES).render.merge({refresh: refresh})
-        x_opaque_id = nil
         ActiveSupport::Notifications.instrument 'delete_query.chewy',
           notification_payload(request: request_body) do
             if Runtime.version < '5.0'
               delete_by_query_plugin(request_body)
             else
-              Chewy.client(_indices.first.hosts_name, x_opaque_id).delete_by_query(request_body)
+              Chewy.client(_indices.first.hosts_name, @x_opaque_id).delete_by_query(request_body)
             end
           end
       end
@@ -977,11 +979,10 @@ module Chewy
 
       def perform(additional = {})
         request_body = render.merge(additional)
-        x_opaque_id = nil
         ActiveSupport::Notifications.instrument 'search_query.chewy',
           notification_payload(request: request_body) do
             begin
-              Chewy.client(_indices.first.hosts_name, x_opaque_id).search(request_body)
+              Chewy.client(_indices.first.hosts_name, @x_opaque_id).search(request_body)
             rescue Elasticsearch::Transport::Transport::Errors::NotFound
               {}
             end
@@ -1018,8 +1019,7 @@ module Chewy
           Elasticsearch::API::Utils.__listify(request[:type]),
           '_query'
         )
-        x_opaque_id = nil
-        Chewy.client(_indices.first.hosts_name, x_opaque_id).perform_request(Elasticsearch::API::HTTP_DELETE, path, {}, request[:body]).body
+        Chewy.client(_indices.first.hosts_name, @x_opaque_id).perform_request(Elasticsearch::API::HTTP_DELETE, path, {}, request[:body]).body
       end
 
       def loader

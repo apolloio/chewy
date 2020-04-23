@@ -170,10 +170,10 @@ module Chewy
         #
         # https://www.elastic.co/guide/en/elasticsearch/reference/master/tasks.html
         # https://www.elastic.co/guide/en/elasticsearch/reference/current/tasks.html#_identifying_running_tasks
-        if x_opaque_id or true
+        if x_opaque_id
           client_configuration[:transport_options] = client_configuration[:transport_options] || {}
           client_configuration[:transport_options][:headers] = client_configuration[:transport_options][:headers] || {}
-          client_configuration[:transport_options][:headers][:x_opaque_id] = '123123312'
+          client_configuration[:transport_options][:headers][:x_opaque_id] = x_opaque_id
         end
         puts "block=#{block}"
         puts "client_configuration=#{client_configuration}"
