@@ -88,7 +88,7 @@ module Chewy
       end
 
       def set_x_opaque_id(x_opaque_id)
-        @x_opaque_id ||= x_opaque_id
+        @x_opaque_id = x_opaque_id
       end
 
       # Compare two scopes or scope with a collection of wrappers.
