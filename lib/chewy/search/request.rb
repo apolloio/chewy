@@ -813,6 +813,7 @@ module Chewy
       # @return [Integer] total hits count
       def count
         if performed?
+          puts 'already performed!!'
           total
         else
           Chewy.client(_indices.first.hosts_name, @x_opaque_id).count(only(WHERE_STORAGES).render(replace_post_filter: true))['count']
