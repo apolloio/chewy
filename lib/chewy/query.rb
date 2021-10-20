@@ -289,6 +289,10 @@ module Chewy
     def timeout(value)
       chain { criteria.update_request_options timeout: value }
     end
+    #
+    # def routing(value)
+    #   chain { criteria.update_request_options routing: value }
+    # end
 
     # Sets elasticsearch `size` search request param
     # Default value is set in the elasticsearch and is 10.

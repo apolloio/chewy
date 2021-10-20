@@ -28,7 +28,7 @@ module Chewy
         indices_boost rescore highlight total total_count
         total_entries indices types delete_all count exists?
         exist? find pluck scroll_batches scroll_hits
-        scroll_results scroll_wrappers
+        scroll_results scroll_wrappers routing
       ].to_set.freeze
       DEFAULT_BATCH_SIZE = 1000
       DEFAULT_PLUCK_BATCH_SIZE = 10_000
