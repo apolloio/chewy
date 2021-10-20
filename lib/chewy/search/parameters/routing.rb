@@ -9,7 +9,7 @@ module Chewy
       # @see Chewy::Search::Request#preference
       # @see https://www.elastic.co/guide/en/elasticsearch/reference/5.4/search-request-preference.html
       class Routing < Storage
-        include StringArrayStorage
+        include StringStorage
         self.param_name = :routing
       end
     end
