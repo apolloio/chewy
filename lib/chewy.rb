@@ -79,9 +79,11 @@ module Chewy
     Chewy::Type::Adapter::Sequel,
     Chewy::Type::Adapter::Object
   ]
+  @connection_key = 0
 
   class << self
     attr_accessor :adapters
+    attr_accessor :connection_key
 
     # Derives a single type for the passed string identifier if possible.
     #
@@ -147,14 +149,19 @@ module Chewy
       type
     end
 
+    def reset_connections(with_https: false)
+      @connection_key += 1
+      reload_settings(with_https: with_https)
+    end
+
     # Main elasticsearch-ruby client instance
     #
     def client(hosts=nil)
       # We are changing this to support multiple clusters in chewy.
       if hosts
-        thread_cache_key = "chewy_client_#{hosts}"
+        thread_cache_key = "chewy_client_#{@connection_key}_#{hosts}"
       else
-        thread_cache_key = "chewy_client"
+        thread_cache_key = "chewy_client_#{@connection_key}"
       end
       Thread.current[thread_cache_key.to_sym] ||= begin
         client_configuration = configuration.deep_dup
