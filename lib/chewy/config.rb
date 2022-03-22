@@ -138,25 +138,6 @@ module Chewy
       end
     end
 
-    def reload_settings(with_https: false)
-      prefix = 'http://'
-      if with_https
-        prefix = 'https://'
-      end
-      https_hosts = []
-      @yaml_settings[:hosts].each do |host|
-        https_hosts << prefix + host.gsub(/https?:\/\//, '')
-      end
-      @yaml_settings[:hosts] = https_hosts
-      https_hosts = []
-      @yaml_settings[:zp_reporting_hosts].each do |host|
-        https_hosts << prefix + host.gsub(/https?:\/\//, '')
-      end
-      @yaml_settings[:zp_reporting_hosts] = https_hosts
-      ap @yaml_settings
-      @yaml_settings
-    end
-
   private
 
     def yaml_settings
@@ -171,7 +152,6 @@ module Chewy
           end
         end || {}
       end
-
     end
 
     def build_search_class(base)
