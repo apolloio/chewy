@@ -23,7 +23,7 @@ module Chewy
       #
       # @return [Integer]
       def total
-        @total ||= hits_root['total'] ? hits_root['total']['value'] || 0 : 0
+        @total ||= hits_root.fetch('total', {}).fetch('value', 0)
       end
 
       # Response `max_score` field.
@@ -64,12 +64,12 @@ module Chewy
       end
       alias_method :aggregations, :aggs
 
-      # {Chewy::Type} wrappers collection instantiated on top of hits.
+      # {Chewy::Index} wrappers collection instantiated on top of hits.
       #
-      # @return [Array<Chewy::Type>]
+      # @return [Array<Chewy::Index>]
       def wrappers
         @wrappers ||= hits.map do |hit|
-          @loader.derive_type(hit['_index'], hit['_source']['_index_type']).build(hit)
+          @loader.derive_index(hit['_index']).build(hit)
         end
       end
 
@@ -102,7 +102,7 @@ module Chewy
       #   end
       # @see #wrappers
       # @see #objects
-      # @return [{Chewy::Type => Object}] a hash with wrappers as keys and ORM/ODM objects as values
+      # @return [{Chewy::Index => Object}] a hash with wrappers as keys and ORM/ODM objects as values
       def object_hash
         @object_hash ||= wrappers.zip(objects).to_h
       end

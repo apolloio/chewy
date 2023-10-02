@@ -1,10 +1,7 @@
 module Chewy
   module Fields
     class Root < Chewy::Fields::Base
-      attr_reader :dynamic_templates
-      attr_reader :id
-      attr_reader :parent
-      attr_reader :parent_id
+      attr_reader :dynamic_templates, :id
 
       def initialize(name, **options)
         super(name, **options)
@@ -15,9 +12,7 @@ module Chewy
 
       def update_options!(**options)
         @id = options.fetch(:id, options.fetch(:_id, @id))
-        @parent = options.fetch(:parent, options.fetch(:_parent, @parent))
-        @parent_id = options.fetch(:parent_id, @parent_id)
-        @options.merge!(options.except(:id, :_id, :parent, :_parent, :parent_id, :type))
+        @options.merge!(options.except(:id, :_id, :type))
       end
 
       def mappings_hash
@@ -29,11 +24,10 @@ module Chewy
           mappings[name][:dynamic_templates].concat dynamic_templates
         end
 
-        mappings[name][:_parent] = parent.is_a?(Hash) ? parent : {type: parent} if parent
-        mappings
+        mappings[name]
       end
 
-      def dynamic_template(*args)
+      ruby2_keywords def dynamic_template(*args)
         options = args.extract_options!.deep_symbolize_keys
         if args.first
           template_name = :"template_#{dynamic_templates.count.next}"
@@ -54,13 +48,9 @@ module Chewy
         end
       end
 
-      def compose_parent(object)
-        return unless parent_id
-        parent_id.arity.zero? ? object.instance_exec(&parent_id) : parent_id.call(object)
-      end
-
       def compose_id(object)
         return unless id
+
         id.arity.zero? ? object.instance_exec(&id) : id.call(object)
       end
 

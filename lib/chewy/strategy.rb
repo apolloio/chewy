@@ -2,24 +2,13 @@ require 'chewy/strategy/base'
 require 'chewy/strategy/bypass'
 require 'chewy/strategy/urgent'
 require 'chewy/strategy/atomic'
-
-begin
-  require 'resque'
-  require 'chewy/strategy/resque'
-rescue LoadError
-  nil
-end
+require 'chewy/strategy/atomic_no_refresh'
 
 begin
   require 'sidekiq'
   require 'chewy/strategy/sidekiq'
-rescue LoadError
-  nil
-end
-
-begin
-  require 'shoryuken'
-  require 'chewy/strategy/shoryuken'
+  require 'chewy/strategy/lazy_sidekiq'
+  require 'chewy/strategy/delayed_sidekiq'
 rescue LoadError
   nil
 end
@@ -60,6 +49,7 @@ module Chewy
 
     def pop
       raise "Can't pop root strategy" if @stack.one?
+
       result = @stack.pop.tap(&:leave)
       debug "[#{@stack.size}] -> #{result.name}, now #{current.name}" if @stack.size > 1
       result
@@ -75,17 +65,14 @@ module Chewy
   private
 
     def debug(string)
-      return unless Chewy.logger && Chewy.logger.debug?
+      return unless Chewy.logger&.debug?
+
       line = caller.detect { |l| l !~ %r{lib/chewy/strategy.rb:|lib/chewy.rb:} }
       Chewy.logger.debug(["Chewy strategies stack: #{string}", line.sub(/:in\s.+$/, '')].join(' @ '))
     end
 
     def resolve(name)
       "Chewy::Strategy::#{name.to_s.camelize}".safe_constantize or raise "Can't find update strategy `#{name}`"
-    rescue NameError => ex
-      # WORKAROUND: Strange behavior of `safe_constantize` with mongoid gem
-      raise "Can't find update strategy `#{name}`" if ex.name.to_s.demodulize == name.to_s.camelize
-      raise
     end
   end
 end

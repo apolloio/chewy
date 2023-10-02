@@ -10,8 +10,12 @@ describe Chewy::Fields::Base do
     specify { expect(field.compose(double(value: 'hello'))).to eq(name: 'hello') }
     specify { expect(field.compose(double(value: %w[hello world]))).to eq(name: %w[hello world]) }
 
-    specify { expect(described_class.new(:name, value: :last_name).compose(double(last_name: 'hello'))).to eq(name: 'hello') }
-    specify { expect(described_class.new(:name, value: :last_name).compose('last_name' => 'hello')).to eq(name: 'hello') }
+    specify do
+      expect(described_class.new(:name, value: :last_name).compose(double(last_name: 'hello'))).to eq(name: 'hello')
+    end
+    specify do
+      expect(described_class.new(:name, value: :last_name).compose('last_name' => 'hello')).to eq(name: 'hello')
+    end
     specify { expect(described_class.new(:name).compose(double(name: 'hello'))).to eq(name: 'hello') }
     specify { expect(described_class.new(:false_value).compose(false_value: false)).to eq(false_value: false) }
     specify { expect(described_class.new(:true_value).compose(true_value: true)).to eq(true_value: true) }
@@ -122,14 +126,12 @@ describe Chewy::Fields::Base do
     context 'default field type' do
       before do
         stub_index(:events) do
-          define_type :event do
+          field :id
+          field :category do
             field :id
-            field :category do
+            field :licenses do
               field :id
-              field :licenses do
-                field :id
-                field :created_at, type: 'time'
-              end
+              field :created_at, type: 'time'
             end
           end
         end
@@ -143,175 +145,217 @@ describe Chewy::Fields::Base do
       end
 
       specify do
-        expect(EventsIndex::Event.mappings_hash).to eq(event: {
-          properties: {
-            id: {type: 'integer'},
-            category: {
-              type: 'object',
-              properties: {
-                id: {type: 'integer'},
-                licenses: {
-                  type: 'object',
-                  properties: {
-                    id: {type: 'integer'},
-                    created_at: {type: 'time'}
+        expect(EventsIndex.mappings_hash).to eq(
+          mappings: {
+            properties: {
+              id: {type: 'integer'},
+              category: {
+                type: 'object',
+                properties: {
+                  id: {type: 'integer'},
+                  licenses: {
+                    type: 'object',
+                    properties: {
+                      id: {type: 'integer'},
+                      created_at: {type: 'time'}
+                    }
                   }
                 }
               }
             }
           }
-        })
+        )
       end
     end
 
     context 'objects, hashes and arrays' do
       before do
         stub_index(:events) do
-          define_type :event do
+          field :id
+          field :category do
             field :id
-            field :category do
+            field :licenses do
               field :id
-              field :licenses do
-                field :id
-                field :name
-              end
+              field :name
             end
           end
         end
       end
 
       specify do
-        expect(EventsIndex::Event.root.compose(
-                 id: 1, category: {id: 2, licenses: {id: 3, name: 'Name'}}
-        )).to eq('id' => 1, 'category' => {'id' => 2, 'licenses' => {'id' => 3, 'name' => 'Name'}})
+        expect(
+          EventsIndex.root.compose({id: 1, category: {id: 2, licenses: {id: 3, name: 'Name'}}})
+        ).to eq('id' => 1, 'category' => {'id' => 2, 'licenses' => {'id' => 3, 'name' => 'Name'}})
       end
 
       specify do
-        expect(EventsIndex::Event.root.compose(id: 1, category: [
-          {id: 2, 'licenses' => {id: 3, name: 'Name1'}},
-          {id: 4, licenses: nil}
-        ])).to eq('id' => 1, 'category' => [
+        expect(
+          EventsIndex.root.compose({id: 1, category: [
+            {id: 2, 'licenses' => {id: 3, name: 'Name1'}},
+            {id: 4, licenses: nil}
+          ]})
+        ).to eq('id' => 1, 'category' => [
           {'id' => 2, 'licenses' => {'id' => 3, 'name' => 'Name1'}},
           {'id' => 4, 'licenses' => nil.as_json}
         ])
       end
 
       specify do
-        expect(EventsIndex::Event.root.compose('id' => 1, category: {id: 2, licenses: [
-          {id: 3, name: 'Name1'}, {id: 4, name: 'Name2'}
-        ]})).to eq('id' => 1, 'category' => {'id' => 2, 'licenses' => [
-          {'id' => 3, 'name' => 'Name1'}, {'id' => 4, 'name' => 'Name2'}
-        ]})
+        expect(
+          EventsIndex.root.compose({
+            'id' => 1,
+            category: {
+              id: 2, licenses: [
+                {id: 3, name: 'Name1'},
+                {id: 4, name: 'Name2'}
+              ]
+            }
+          })
+        ).to eq(
+          'id' => 1,
+          'category' => {
+            'id' => 2,
+            'licenses' => [
+              {'id' => 3, 'name' => 'Name1'},
+              {'id' => 4, 'name' => 'Name2'}
+            ]
+          }
+        )
       end
 
       specify do
-        expect(EventsIndex::Event.root.compose(id: 1, category: [
-          {id: 2, licenses: [
-            {id: 3, 'name' => 'Name1'}, {id: 4, name: 'Name2'}
-          ]},
-          {id: 5, licenses: []}
-        ])).to eq('id' => 1, 'category' => [
-          {'id' => 2, 'licenses' => [
-            {'id' => 3, 'name' => 'Name1'}, {'id' => 4, 'name' => 'Name2'}
-          ]},
-          {'id' => 5, 'licenses' => []}
-        ])
+        expect(
+          EventsIndex.root.compose({id: 1, category: [
+            {id: 2, licenses: [
+              {id: 3, 'name' => 'Name1'}, {id: 4, name: 'Name2'}
+            ]},
+            {id: 5, licenses: []}
+          ]})
+        ).to eq(
+          'id' => 1,
+          'category' => [
+            {'id' => 2, 'licenses' => [
+              {'id' => 3, 'name' => 'Name1'},
+              {'id' => 4, 'name' => 'Name2'}
+            ]},
+            {'id' => 5, 'licenses' => []}
+          ]
+        )
+      end
+      specify do
+        expect(
+          EventsIndex.root.compose(double(id: 1, category: double(id: 2, licenses: double(id: 3, name: 'Name'))))
+        ).to eq('id' => 1, 'category' => {'id' => 2, 'licenses' => {'id' => 3, 'name' => 'Name'}})
       end
 
       specify do
-        expect(EventsIndex::Event.root.compose(
-                 double(id: 1, category: double(id: 2, licenses: double(id: 3, name: 'Name')))
-        )).to eq('id' => 1, 'category' => {'id' => 2, 'licenses' => {'id' => 3, 'name' => 'Name'}})
-      end
-
-      specify do
-        expect(EventsIndex::Event.root.compose(double(id: 1, category: [
-          double(id: 2, licenses: double(id: 3, name: 'Name1')),
-          double(id: 4, licenses: nil)
-        ]))).to eq('id' => 1, 'category' => [
+        expect(
+          EventsIndex.root.compose(double(id: 1, category: [
+            double(id: 2, licenses: double(id: 3, name: 'Name1')),
+            double(id: 4, licenses: nil)
+          ]))
+        ).to eq('id' => 1, 'category' => [
           {'id' => 2, 'licenses' => {'id' => 3, 'name' => 'Name1'}},
           {'id' => 4, 'licenses' => nil.as_json}
         ])
       end
 
       specify do
-        expect(EventsIndex::Event.root.compose(double(id: 1, category: double(id: 2, licenses: [
-          double(id: 3, name: 'Name1'), double(id: 4, name: 'Name2')
-        ])))).to eq('id' => 1, 'category' => {'id' => 2, 'licenses' => [
-          {'id' => 3, 'name' => 'Name1'}, {'id' => 4, 'name' => 'Name2'}
-        ]})
-      end
-
-      specify do
-        expect(EventsIndex::Event.root.compose(double(id: 1, category: [
-          double(id: 2, licenses: [
+        expect(
+          EventsIndex.root.compose(double(id: 1, category: double(id: 2, licenses: [
             double(id: 3, name: 'Name1'), double(id: 4, name: 'Name2')
-          ]),
-          double(id: 5, licenses: [])
-        ]))).to eq('id' => 1, 'category' => [
-          {'id' => 2, 'licenses' => [
-            {'id' => 3, 'name' => 'Name1'}, {'id' => 4, 'name' => 'Name2'}
-          ]},
-          {'id' => 5, 'licenses' => []}
-        ])
+          ])))
+        ).to eq('id' => 1, 'category' => {'id' => 2, 'licenses' => [
+          {'id' => 3, 'name' => 'Name1'}, {'id' => 4, 'name' => 'Name2'}
+        ]})
+      end
+
+      specify do
+        expect(
+          EventsIndex.root.compose(double(id: 1, category: [
+            double(id: 2, licenses: [
+              double(id: 3, name: 'Name1'), double(id: 4, name: 'Name2')
+            ]),
+            double(id: 5, licenses: [])
+          ]))
+        ).to eq(
+          'id' => 1, 'category' => [
+            {'id' => 2, 'licenses' => [
+              {'id' => 3, 'name' => 'Name1'}, {'id' => 4, 'name' => 'Name2'}
+            ]},
+            {'id' => 5, 'licenses' => []}
+          ]
+        )
       end
     end
 
     context 'custom methods' do
       before do
         stub_index(:events) do
-          define_type :event do
+          field :id, type: 'integer'
+          field :category, value: -> { categories } do
             field :id, type: 'integer'
-            field :category, value: -> { categories } do
+            field :licenses, value: -> { license } do
               field :id, type: 'integer'
-              field :licenses, value: -> { license } do
-                field :id, type: 'integer'
-                field :name
-              end
+              field :name
             end
           end
         end
       end
 
       specify do
-        expect(EventsIndex::Event.root.compose(
-                 double(id: 1, categories: double(id: 2, license: double(id: 3, name: 'Name')))
-        )).to eq('id' => 1, 'category' => {'id' => 2, 'licenses' => {'id' => 3, 'name' => 'Name'}})
+        expect(
+          EventsIndex.root.compose(
+            double(
+              id: 1, categories: double(
+                id: 2, license: double(
+                  id: 3, name: 'Name'
+                )
+              )
+            )
+          )
+        ).to eq('id' => 1, 'category' => {'id' => 2, 'licenses' => {'id' => 3, 'name' => 'Name'}})
       end
     end
 
     context 'objects and multi_fields' do
       before do
         stub_index(:events) do
-          define_type :event do
-            field :id, type: 'integer'
-            field :name, type: 'integer' do
-              field :raw, analyzer: 'my_own'
-            end
-            field :category, type: 'object'
+          field :id, type: 'integer'
+          field :name, type: 'integer' do
+            field :raw, analyzer: 'my_own'
           end
+          field :category, type: 'object'
         end
       end
 
       specify do
-        expect(EventsIndex::Event.mappings_hash).to eq(event: {
-          properties: {
-            id: {type: 'integer'},
-            name: {
-              type: 'integer',
-              fields: {
-                raw: {analyzer: 'my_own', type: Chewy.default_field_type}
-              }
-            },
-            category: {type: 'object'}
+        expect(EventsIndex.mappings_hash).to eq(
+          mappings: {
+            properties: {
+              id: {type: 'integer'},
+              name: {
+                type: 'integer',
+                fields: {
+                  raw: {analyzer: 'my_own', type: Chewy.default_field_type}
+                }
+              },
+              category: {type: 'object'}
+            }
           }
-        })
+        )
       end
 
       specify do
-        expect(EventsIndex::Event.root.compose(
-                 double(id: 1, name: 'Jonny', category: double(id: 2, as_json: {'name' => 'Borogoves'}))
-        )).to eq(
+        expect(
+          EventsIndex.root.compose(
+            double(
+              id: 1, name: 'Jonny', category: double(
+                id: 2, as_json: {'name' => 'Borogoves'}
+              )
+            )
+          )
+        ).to eq(
           'id' => 1,
           'name' => 'Jonny',
           'category' => {'name' => 'Borogoves'}
@@ -319,12 +363,14 @@ describe Chewy::Fields::Base do
       end
 
       specify do
-        expect(EventsIndex::Event.root.compose(
-                 double(id: 1, name: 'Jonny', category: [
-                   double(id: 2, as_json: {'name' => 'Borogoves1'}),
-                   double(id: 3, as_json: {'name' => 'Borogoves2'})
-                 ])
-        )).to eq(
+        expect(
+          EventsIndex.root.compose(
+            double(id: 1, name: 'Jonny', category: [
+              double(id: 2, as_json: {'name' => 'Borogoves1'}),
+              double(id: 3, as_json: {'name' => 'Borogoves2'})
+            ])
+          )
+        ).to eq(
           'id' => 1,
           'name' => 'Jonny',
           'category' => [
@@ -335,38 +381,286 @@ describe Chewy::Fields::Base do
       end
     end
 
+    context 'ignore_blank option for field method', :orm do
+      before do
+        stub_model(:location)
+        stub_model(:city)
+        stub_model(:country)
+
+        City.belongs_to :country
+        Location.belongs_to :city
+        City.has_one :location, -> { order :id }
+        Country.has_many :cities, -> { order :id }
+      end
+
+      context 'text fields with and without ignore_blank option' do
+        before do
+          stub_index(:countries) do
+            index_scope Country
+            field :id
+            field :cities do
+              field :id
+              field :name
+              field :historical_name, ignore_blank: false
+              field :description, ignore_blank: true
+            end
+          end
+        end
+
+        let(:country_with_cities) do
+          cities = [
+            City.create!(id: 1, name: '', historical_name: '', description: ''),
+            City.create!(id: 2, name: '', historical_name: '', description: '')
+          ]
+
+          Country.create!(id: 1, cities: cities)
+        end
+
+        specify do
+          expect(CountriesIndex.root.compose(country_with_cities)).to eq(
+            'id' => 1, 'cities' => [
+              {'id' => 1, 'name' => '', 'historical_name' => ''},
+              {'id' => 2, 'name' => '', 'historical_name' => ''}
+            ]
+          )
+        end
+        specify { expect(CountriesIndex.reset).to eq(true) }
+      end
+
+      context 'nested fields' do
+        context 'with ignore_blank: true option' do
+          before do
+            stub_index(:countries) do
+              index_scope Country
+              field :id
+              field :cities, ignore_blank: true do
+                field :id
+                field :name
+                field :historical_name, ignore_blank: true
+                field :description
+              end
+            end
+          end
+
+          let(:country) { Country.create!(id: 1, cities: cities) }
+          context('without cities') do
+            let(:cities) { [] }
+            specify do
+              expect(CountriesIndex.root.compose(country))
+                .to eq('id' => 1)
+            end
+          end
+          context('with cities') do
+            let(:cities) { [City.create!(id: 1, name: '', historical_name: '')] }
+            specify do
+              expect(CountriesIndex.root.compose(country)).to eq(
+                'id' => 1, 'cities' => [
+                  {'id' => 1, 'name' => '', 'description' => nil}
+                ]
+              )
+            end
+          end
+        end
+
+        context 'with ignore_blank: false option' do
+          before do
+            stub_index(:countries) do
+              index_scope Country
+              field :id
+              field :cities, ignore_blank: false do
+                field :id
+                field :name
+                field :historical_name
+                field :description
+              end
+            end
+          end
+
+          let(:country_with_cities) { Country.create!(id: 1) }
+
+          specify do
+            expect(CountriesIndex.root.compose(country_with_cities))
+              .to eq('id' => 1, 'cities' => [])
+          end
+        end
+
+        context 'without ignore_blank: true option' do
+          before do
+            stub_index(:countries) do
+              index_scope Country
+              field :id
+              field :cities do
+                field :id
+                field :name
+                field :historical_name
+                field :description
+              end
+            end
+          end
+
+          let(:country_with_cities) { Country.create!(id: 1) }
+
+          specify do
+            expect(CountriesIndex.root.compose(country_with_cities))
+              .to eq('id' => 1, 'cities' => [])
+          end
+        end
+      end
+
+      context 'geo_point field type' do
+        context 'with ignore_blank: true option' do
+          before do
+            stub_index(:countries) do
+              index_scope Country
+              field :id
+              field :cities do
+                field :id
+                field :name
+                field :location, type: :geo_point, ignore_blank: true do
+                  field :lat
+                  field :lon
+                end
+              end
+            end
+          end
+
+          specify do
+            expect(
+              CountriesIndex.root.compose({
+                'id' => 1,
+                'cities' => [
+                  {'id' => 1, 'name' => 'City1', 'location' => {}},
+                  {'id' => 2, 'name' => 'City2', 'location' => {}}
+                ]
+              })
+            ).to eq(
+              'id' => 1, 'cities' => [
+                {'id' => 1, 'name' => 'City1'},
+                {'id' => 2, 'name' => 'City2'}
+              ]
+            )
+          end
+        end
+
+        context 'join field type' do
+          before do
+            stub_model(:comment)
+            stub_index(:comments) do
+              index_scope Comment
+              field :id
+              field :hierarchy, type: :join, relations: {question: %i[answer comment], answer: :vote, vote: :subvote}, join: {type: :comment_type, id: :commented_id}
+            end
+          end
+
+          specify do
+            expect(
+              CommentsIndex.root.compose(
+                {'id' => 1, 'comment_type' => 'question'}
+              )
+            ).to eq(
+              {'id' => 1, 'hierarchy' => 'question'}
+            )
+
+            expect(
+              CommentsIndex.root.compose(
+                {'id' => 2, 'comment_type' => 'answer', 'commented_id' => 1}
+              )
+            ).to eq(
+              {'id' => 2, 'hierarchy' => {'name' => 'answer', 'parent' => 1}}
+            )
+
+            expect do
+              CommentsIndex.root.compose(
+                {'id' => 2, 'comment_type' => 'asd', 'commented_id' => 1}
+              )
+            end.to raise_error Chewy::InvalidJoinFieldType
+          end
+        end
+
+        context 'without ignore_blank option' do
+          before do
+            stub_index(:countries) do
+              index_scope Country
+              field :id
+              field :cities do
+                field :id
+                field :name
+                field :location, type: :geo_point do
+                  field :lat
+                  field :lon
+                end
+              end
+            end
+          end
+
+          specify do
+            expect(
+              CountriesIndex.root.compose({
+                'id' => 1,
+                'cities' => [
+                  {'id' => 1, 'name' => 'City1', 'location' => {}},
+                  {'id' => 2, 'name' => 'City2', 'location' => {}}
+                ]
+              })
+            ).to eq(
+              'id' => 1, 'cities' => [
+                {'id' => 1, 'name' => 'City1'},
+                {'id' => 2, 'name' => 'City2'}
+              ]
+            )
+          end
+        end
+
+        context 'with ignore_blank: false flag' do
+          before do
+            stub_index(:countries) do
+              index_scope Country
+              field :id
+              field :cities do
+                field :id
+                field :name
+                field :location, type: :geo_point, ignore_blank: false do
+                  field :lat
+                  field :lon
+                end
+              end
+            end
+          end
+
+          specify do
+            expect(
+              CountriesIndex.root.compose({
+                'id' => 1,
+                'cities' => [
+                  {'id' => 1, 'location' => {}, 'name' => 'City1'},
+                  {'id' => 2, 'location' => '', 'name' => 'City2'}
+                ]
+              })
+            ).to eq(
+              'id' => 1, 'cities' => [
+                {'id' => 1, 'location' => {}, 'name' => 'City1'},
+                {'id' => 2, 'location' => '', 'name' => 'City2'}
+              ]
+            )
+          end
+        end
+      end
+    end
+
     context 'objects and scopes', :orm do
       before do
         stub_model(:city)
         stub_model(:country)
 
-        case adapter
-        when :active_record
-          City.belongs_to :country
-          if ActiveRecord::VERSION::MAJOR >= 4
-            Country.has_many :cities, -> { order :id }
-          else
-            Country.has_many :cities, order: :id
-          end
-        when :mongoid
-          if Mongoid::VERSION.start_with?('6')
-            City.belongs_to :country, optional: true
-          else
-            City.belongs_to :country
-          end
-          Country.has_many :cities, order: :id.asc
-        when :sequel
-          City.many_to_one :country
-          Country.one_to_many :cities, order: :id
-        end
+        City.belongs_to :country
+        Country.has_many :cities, -> { order :id }
 
         stub_index(:countries) do
-          define_type Country do
+          index_scope Country
+          field :id
+          field :cities do
             field :id
-            field :cities do
-              field :id
-              field :name
-            end
+            field :name
           end
         end
       end
@@ -374,17 +668,11 @@ describe Chewy::Fields::Base do
       let(:country_with_cities) do
         cities = [City.create!(id: 1, name: 'City1'), City.create!(id: 2, name: 'City2')]
 
-        if adapter == :sequel
-          Country.create(id: 1).tap do |country|
-            cities.each { |city| country.add_city(city) }
-          end
-        else
-          Country.create!(id: 1, cities: cities)
-        end
+        Country.create!(id: 1, cities: cities)
       end
 
       specify do
-        expect(CountriesIndex::Country.root.compose(country_with_cities)).to eq('id' => 1, 'cities' => [
+        expect(CountriesIndex.root.compose(country_with_cities)).to eq('id' => 1, 'cities' => [
           {'id' => 1, 'name' => 'City1'}, {'id' => 2, 'name' => 'City2'}
         ])
       end
@@ -392,20 +680,19 @@ describe Chewy::Fields::Base do
       context 'nested object' do
         before do
           stub_index(:cities) do
-            define_type City do
+            index_scope City
+            field :id
+            field :country do
               field :id
-              field :country do
-                field :id
-                field :name
-              end
+              field :name
             end
           end
         end
 
         specify do
-          expect(CitiesIndex::City.root.compose(
-                   City.create!(id: 1, country: Country.create!(id: 1, name: 'Country'))
-          )).to eq('id' => 1, 'country' => {'id' => 1, 'name' => 'Country'})
+          expect(
+            CitiesIndex.root.compose(City.create!(id: 1, country: Country.create!(id: 1, name: 'Country')))
+          ).to eq('id' => 1, 'country' => {'id' => 1, 'name' => 'Country'})
         end
       end
     end
