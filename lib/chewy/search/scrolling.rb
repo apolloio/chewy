@@ -31,16 +31,20 @@ module Chewy
         total = [raw_limit_value, result.fetch('hits', {}).fetch('total', {}).fetch('value', 0)].compact.min
         last_batch_size = total % batch_size
         fetched = 0
+        scroll_id = nil
 
         loop do
           hits = result.fetch('hits', {}).fetch('hits', [])
           fetched += hits.size
           hits = hits.first(last_batch_size) if last_batch_size != 0 && fetched >= total
           yield(hits) if hits.present?
-          break if fetched >= total
           scroll_id = result['_scroll_id']
+          break if fetched >= total
+
           result = perform_scroll(scroll: scroll, scroll_id: scroll_id)
         end
+      ensure
+        Chewy.client.clear_scroll(body: {scroll_id: scroll_id}) if scroll_id
       end
 
       # @!method scroll_hits(batch_size: 1000, scroll: '1m')
@@ -58,17 +62,17 @@ module Chewy
       #   @example
       #     PlaceIndex.scroll_hits.map { |hit| hit['_id'] }
       #   @return [Enumerator] a standard ruby Enumerator
-      def scroll_hits(**options)
+      def scroll_hits(**options, &block)
         return enum_for(:scroll_hits, **options) unless block_given?
 
         scroll_batches(**options).each do |batch|
-          batch.each { |hit| yield hit }
+          batch.each(&block)
         end
       end
 
       # @!method scroll_wrappers(batch_size: 1000, scroll: '1m')
       # Iterates through the documents of the scope in batches. Yields
-      # each hit wrapped with {Chewy::Type}.
+      # each hit wrapped with {Chewy::Index}.
       #
       # @param batch_size [Integer] batch size obviously, replaces `size` query parameter
       # @param scroll [String] cursor expiration time
@@ -76,7 +80,7 @@ module Chewy
       # @overload scroll_wrappers(batch_size: 1000, scroll: '1m')
       #   @example
       #     PlaceIndex.scroll_wrappers { |object| p object.id }
-      #   @yieldparam object [Chewy::Type] block is executed for each hit object
+      #   @yieldparam object [Chewy::Index] block is executed for each hit object
       #
       # @overload scroll_wrappers(batch_size: 1000, scroll: '1m')
       #   @example
@@ -86,7 +90,7 @@ module Chewy
         return enum_for(:scroll_wrappers, **options) unless block_given?
 
         scroll_hits(**options).each do |hit|
-          yield loader.derive_type(hit['_index'], hit['_type']).build(hit)
+          yield loader.derive_index(hit['_index']).build(hit)
         end
       end
 
@@ -110,12 +114,12 @@ module Chewy
       #   @example
       #     PlaceIndex.scroll_objects.map { |record| record.id }
       #   @return [Enumerator] a standard ruby Enumerator
-      def scroll_objects(**options)
+      def scroll_objects(**options, &block)
         return enum_for(:scroll_objects, **options) unless block_given?
 
         except(:source, :stored_fields, :script_fields, :docvalue_fields)
           .source(false).scroll_batches(**options).each do |batch|
-            loader.load(batch).each { |object| yield object }
+            loader.load(batch).each(&block)
           end
       end
       alias_method :scroll_records, :scroll_objects
@@ -124,10 +128,9 @@ module Chewy
     private
 
       def perform_scroll(body)
-        ActiveSupport::Notifications.instrument 'search_query.chewy',
-          notification_payload(request: body) do
-            Chewy.client(@hosts_name).scroll(body)
-          end
+        ActiveSupport::Notifications.instrument 'search_query.chewy', notification_payload(request: body) do
+          Chewy.client.scroll(body)
+        end
       end
     end
   end

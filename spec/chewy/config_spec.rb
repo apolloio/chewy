@@ -6,11 +6,9 @@ describe Chewy::Config do
   its(:logger) { should be_nil }
   its(:transport_logger) { should be_nil }
   its(:transport_logger) { should be_nil }
-  its(:query_mode) { should == :must }
-  its(:filter_mode) { should == :and }
-  its(:post_filter_mode) { should be_nil }
   its(:root_strategy) { should == :base }
   its(:request_strategy) { should == :atomic }
+  its(:console_strategy) { should == :urgent }
   its(:use_after_commit_callbacks) { should == true }
   its(:indices_path) { should == 'app/chewy' }
   its(:reset_disable_refresh_interval) { should == false }
@@ -54,79 +52,22 @@ describe Chewy::Config do
     end
   end
 
-  describe '#search_class=' do
-    specify do
-      expect { subject.search_class = Chewy::Query }
-        .to change { subject.search_class }
-        .from(be < Chewy::Search::Request)
-        .to(be < Chewy::Query)
-    end
-
-    context do
-      before { hide_const('Kaminari') }
-
-      specify do
-        expect(subject.search_class.included_modules)
-          .to include(Chewy::Search::Pagination::WillPaginate)
-      end
-    end
-  end
-
   describe '#search_class' do
     context 'nothing is defined' do
       before do
         hide_const('Kaminari')
-        hide_const('WillPaginate')
       end
 
       specify do
         expect(subject.search_class.included_modules)
           .not_to include(Chewy::Search::Pagination::Kaminari)
-      end
-
-      specify do
-        expect(subject.search_class.included_modules)
-          .not_to include(Chewy::Search::Pagination::WillPaginate)
       end
     end
 
     context 'kaminari' do
-      before { hide_const('WillPaginate') }
-
       specify do
         expect(subject.search_class.included_modules)
           .to include(Chewy::Search::Pagination::Kaminari)
-      end
-
-      specify do
-        expect(subject.search_class.included_modules)
-          .not_to include(Chewy::Search::Pagination::WillPaginate)
-      end
-    end
-
-    context 'will_paginate' do
-      before { hide_const('Kaminari') }
-
-      specify do
-        expect(subject.search_class.included_modules)
-          .not_to include(Chewy::Search::Pagination::Kaminari)
-      end
-
-      specify do
-        expect(subject.search_class.included_modules)
-          .to include(Chewy::Search::Pagination::WillPaginate)
-      end
-    end
-
-    context 'both are defined' do
-      specify do
-        expect(subject.search_class.included_modules)
-          .to include(Chewy::Search::Pagination::Kaminari)
-      end
-
-      specify do
-        expect(subject.search_class.included_modules)
-          .not_to include(Chewy::Search::Pagination::WillPaginate)
       end
     end
   end
@@ -141,7 +82,7 @@ describe Chewy::Config do
     context 'when Rails::VERSION constant is defined' do
       it 'looks for configuration in "config/chewy.yml"' do
         module Rails
-          VERSION = '5.1.0'.freeze
+          VERSION = '5.1.1'.freeze
 
           def self.root
             Pathname.new(__dir__)
@@ -151,6 +92,19 @@ describe Chewy::Config do
         expect(File).to receive(:exist?)
           .with(Pathname.new(__dir__).join('config', 'chewy.yml'))
         subject.configuration
+      end
+    end
+  end
+
+  describe '.console_strategy' do
+    context 'sets .console_strategy' do
+      let(:default_strategy) { subject.console_strategy }
+      let(:new_strategy) { :atomic }
+      after { subject.console_strategy = default_strategy }
+
+      specify do
+        expect { subject.console_strategy = new_strategy }
+          .to change { subject.console_strategy }.to(new_strategy)
       end
     end
   end
