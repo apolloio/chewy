@@ -16,7 +16,7 @@ module Chewy
           @type._crutches.each_key do |name|
             singleton_class.class_eval <<-METHOD, __FILE__, __LINE__ + 1
               def #{name}
-                @#{name} ||= @type._crutches[:#{name}].call @collection, update_fields: @update_fields 
+                @#{name} ||= @type._crutches[:#{name}].call @collection, @update_fields 
               end
             METHOD
           end
