@@ -40,7 +40,7 @@ module Chewy
       private
 
         def crutches
-          @crutches ||= Chewy::Type::Crutch::Crutches.new @type, @index
+          @crutches ||= Chewy::Type::Crutch::Crutches.new @type, @index, update_fields: @fields
         end
 
         def parents

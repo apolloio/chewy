@@ -9,13 +9,13 @@ module Chewy
       end
 
       class Crutches
-        def initialize(type, collection)
+        def initialize(type, collection, update_fields: [])
           @type = type
           @collection = collection
           @type._crutches.each_key do |name|
             singleton_class.class_eval <<-METHOD, __FILE__, __LINE__ + 1
               def #{name}
-                @#{name} ||= @type._crutches[:#{name}].call @collection
+                @#{name} ||= @type._crutches[:#{name}].call @collection, update_fields 
               end
             METHOD
           end
