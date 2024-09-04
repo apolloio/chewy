@@ -18,11 +18,6 @@ module Chewy
           @index = index
           @delete = delete
           @fields = fields.map!(&:to_sym)
-          puts " ===== "
-          puts @type
-          puts @index
-          puts @fields
-          puts " ===== "
         end
 
         # Returns ES API-ready bulk requiest body.
