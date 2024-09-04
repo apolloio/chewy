@@ -77,6 +77,7 @@ module Chewy
         # @param delete [Array<Object>] any acceptable objects for deleting
         # @return [true, false] the result of the request, true if no errors
         def process(index: [], delete: [])
+          puts "inside process"
           bulk_builder = BulkBuilder.new(@type, index: index, delete: delete, fields: @options[:update_fields])
           bulk_body = bulk_builder.bulk_body
 
@@ -117,6 +118,7 @@ module Chewy
         def extract_leftovers(errors, index_objects_by_id)
           return [] unless @options[:update_fields].present? && @options[:update_failover] && errors.present?
 
+          puts "extract_leftovers"
           failed_partial_updates = errors.select do |item|
             item.keys.first == 'update' && item.values.first['error']['type'] == 'document_missing_exception'
           end
