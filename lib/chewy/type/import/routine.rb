@@ -78,7 +78,6 @@ module Chewy
         # @return [true, false] the result of the request, true if no errors
         def process(index: [], delete: [])
           bulk_builder = BulkBuilder.new(@type, index: index, delete: delete, fields: @options[:update_fields])
-          puts bulk_builder
           bulk_body = bulk_builder.bulk_body
 
           if @options[:journal]
