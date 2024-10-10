@@ -49,7 +49,6 @@ module Chewy
 
     class << self
       attr_reader :hosts_name
-
       # @overload index_name(suggest)
       #   If suggested name is passed, it is set up as the new base name for
       #   the index. Used for the index base name redefinition.
