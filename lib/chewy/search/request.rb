@@ -1,34 +1,34 @@
 module Chewy
   module Search
     # The main request DSL class. Supports multiple index requests.
-    # Supports ES2 and ES5 search API and query DSL.
+    # Supports ES5 search API and query DSL.
     #
     # @note The class tries to be as immutable as possible,
     #   so most of the methods return a new instance of the class.
     # @see Chewy::Search
     # @example
     #   scope = Chewy::Search::Request.new(PlacesIndex)
-    #   # => <Chewy::Search::Request {:index=>["places"], :type=>["city", "country"]}>
+    #   # => <Chewy::Search::Request {:index=>["places"], :body=>{}}>
     #   scope.limit(20)
-    #   # => <Chewy::Search::Request {:index=>["places"], :type=>["city", "country"], :body=>{:size=>20}}>
+    #   # => <Chewy::Search::Request {:index=>["places"], :body=>{:size=>20}}>
     #   scope.order(:name).offset(10)
-    #   # => <Chewy::Search::Request {:index=>["places"], :type=>["city", "country"], :body=>{:sort=>["name"], :from=>10}}>
+    #   # => <Chewy::Search::Request {:index=>["places"], :body=>{:sort=>["name"], :from=>10}}>
     class Request
       include Enumerable
       include Scoping
       include Scrolling
       UNDEFINED = Class.new.freeze
-      EVERFIELDS = %w[_index _type _id _parent].freeze
+      EVERFIELDS = %w[_index _type _id _parent _routing].freeze
       DELEGATED_METHODS = %i[
-        query filter post_filter order reorder docvalue_fields
-        track_scores request_cache explain version profile
+        query filter post_filter knn order reorder docvalue_fields
+        track_scores track_total_hits request_cache explain version profile
         search_type preference limit offset terminate_after
         timeout min_score source stored_fields search_after
-        load script_fields suggest aggs aggregations none
+        load script_fields suggest aggs aggregations collapse none
         indices_boost rescore highlight total total_count
         total_entries indices types delete_all count exists?
         exist? find pluck scroll_batches scroll_hits
-        scroll_results scroll_wrappers
+        scroll_results scroll_wrappers ignore_unavailable
       ].to_set.freeze
       DEFAULT_BATCH_SIZE = 1000
       DEFAULT_PLUCK_BATCH_SIZE = 10_000
@@ -41,42 +41,32 @@ module Chewy
       EXTRA_STORAGES = %i[aggs suggest].freeze
       # An array of storage names that are changing the returned hist collection in any way.
       WHERE_STORAGES = %i[
-        query filter post_filter none types min_score rescore indices_boost
+        query filter post_filter knn none min_score rescore indices_boost collapse
       ].freeze
 
       delegate :hits, :wrappers, :objects, :records, :documents,
-        :object_hash, :record_hash, :document_hash,
-        :total, :max_score, :took, :timed_out?, to: :response
+               :object_hash, :record_hash, :document_hash,
+               :total, :max_score, :took, :timed_out?, to: :response
       delegate :each, :size, :to_a, :[], to: :wrappers
       alias_method :to_ary, :to_a
       alias_method :total_count, :total
       alias_method :total_entries, :total
 
-      # The class is initialized with the list of chewy indexes and/or
-      # types, which are later used to compose requests.
+      # The class is initialized with the list of chewy indexes,
+      # which are later used to compose requests.
       # Any symbol/string passed is treated as an index identifier.
       #
       # @example
       #   Chewy::Search::Request.new(:places)
-      #   # => <Chewy::Search::Request {:index=>["places"]}>
+      #   # => <Chewy::Search::Request {:index=>["places"], :body=>{}}>
       #   Chewy::Search::Request.new(PlacesIndex)
-      #   # => <Chewy::Search::Request {:index=>["places"], :type=>["city", "country"]}>
-      #   Chewy::Search::Request.new(PlacesIndex::City)
-      #   # => <Chewy::Search::Request {:index=>["places"], :type=>["city"]}>
-      #   Chewy::Search::Request.new(UsersIndex, PlacesIndex::City)
-      #   # => <Chewy::Search::Request {:index=>["users", "places"], :type=>["city", "user"]}>
-      # @param indexes_or_types [Array<Chewy::Index, Chewy::Type, String, Symbol>] indices and types in any combinations
-      def initialize(*indices_or_types)
-        indices = indices_or_types.reject do |klass|
-          klass.is_a?(Class) && klass < Chewy::Type
-        end
-
-        types = indices_or_types.select do |klass|
-          klass.is_a?(Class) && klass < Chewy::Type
-        end
-
+      #   # => <Chewy::Search::Request {:index=>["places"], :body=>{}}>
+      #   Chewy::Search::Request.new(UsersIndex, PlacesIndex)
+      #   # => <Chewy::Search::Request {:index=>["users", "places"], :body=>{}}>
+      # @param indexes [Array<Chewy::Index, String, Symbol>] indexes
+      def initialize(*indexes)
         parameters.modify!(:indices) do
-          replace!(indices: indices, types: types)
+          replace!(indices: indexes)
         end
       end
 
@@ -116,7 +106,16 @@ module Chewy
       # @see Chewy::Search::Response
       # @return [Chewy::Search::Response] a response object instance
       def response
-        @response ||= Response.new(perform, loader, collection_paginator)
+        @response ||= build_response(perform)
+      end
+
+      # Wraps and sets the raw Elasticsearch response to provide access
+      # to convenience methods.
+      #
+      # @see Chewy::Search::Response
+      # @param from_elasticsearch [Hash] An Elasticsearch response
+      def response=(from_elasticsearch)
+        @response = build_response(from_elasticsearch)
       end
 
       # ES request body
@@ -133,17 +132,17 @@ module Chewy
         "<#{self.class} #{render}>"
       end
 
-      # @!group Chainable request modificators
+      # @!group Chainable request modifications
 
       # @!method query(query_hash=nil, &block)
-      #   Adds `quer` parameter to the search request body.
+      #   Adds `query` parameter to the search request body.
       #
       #   @see https://www.elastic.co/guide/en/elasticsearch/reference/current/search-request-query.html
       #   @see Chewy::Search::Parameters::Query
       #   @return [Chewy::Search::Request, Chewy::Search::QueryProxy]
       #
       #   @overload query(query_hash)
-      #     If pure hash is passed it goes straight to the `quer` parameter storage.
+      #     If pure hash is passed it goes straight to the `query` parameter storage.
       #     Acts exactly the same way as {Chewy::Search::QueryProxy#must}.
       #
       #     @see https://www.elastic.co/guide/en/elasticsearch/reference/current/query-dsl.html
@@ -162,7 +161,7 @@ module Chewy
       #     @example
       #       PlacesIndex.query { match name: 'Moscow' }
       #       # => <PlacesIndex::Query {..., :body=>{:query=>{:match=>{:name=>"Moscow"}}}}>
-      #     @yield the block is processed by `elasticsearch-ds` gem
+      #     @yield the block is processed by `elasticsearch-dsl` gem
       #     @return [Chewy::Search::Request]
       #
       #   @overload query
@@ -178,7 +177,7 @@ module Chewy
       #     @return [Chewy::Search::QueryProxy]
       #
       # @!method filter(query_hash=nil, &block)
-      #   Adds `filte` context of the `quer` parameter at the
+      #   Adds `filter` context of the `query` parameter at the
       #   search request body.
       #
       #   @see https://www.elastic.co/guide/en/elasticsearch/reference/current/query-filter-context.html
@@ -186,7 +185,7 @@ module Chewy
       #   @return [Chewy::Search::Request, Chewy::Search::QueryProxy]
       #
       #   @overload filter(query_hash)
-      #     If pure hash is passed it goes straight to the `filte` context of the `quer` parameter storage.
+      #     If pure hash is passed it goes straight to the `filter` context of the `query` parameter storage.
       #     Acts exactly the same way as {Chewy::Search::QueryProxy#must}.
       #
       #     @see https://www.elastic.co/guide/en/elasticsearch/reference/current/query-dsl.html
@@ -207,7 +206,7 @@ module Chewy
       #       PlacesIndex.filter { match name: 'Moscow' }
       #       # => <PlacesIndex::Query {..., :body=>{:query=>{:bool=>{
       #       #      :filter=>{:match=>{:name=>"Moscow"}}}}}}>
-      #     @yield the block is processed by `elasticsearch-ds` gem
+      #     @yield the block is processed by `elasticsearch-dsl` gem
       #     @return [Chewy::Search::Request]
       #
       #   @overload filter
@@ -225,7 +224,7 @@ module Chewy
       # @!method post_filter(query_hash=nil, &block)
       #   Adds `post_filter` parameter to the search request body.
       #
-      #   @see https://www.elastic.co/guide/en/elasticsearch/reference/current/search-request-post-filter.html
+      #   @see https://www.elastic.co/guide/en/elasticsearch/reference/current/filter-search-results.html#post-filter
       #   @see Chewy::Search::Parameters::PostFilter
       #   @return [Chewy::Search::Request, Chewy::Search::QueryProxy]
       #
@@ -249,7 +248,7 @@ module Chewy
       #     @example
       #       PlacesIndex.post_filter { match name: 'Moscow' }
       #       # => <PlacesIndex::Query {..., :body=>{:post_filter=>{:match=>{:name=>"Moscow"}}}}>
-      #     @yield the block is processed by `elasticsearch-ds` gem
+      #     @yield the block is processed by `elasticsearch-dsl` gem
       #     @return [Chewy::Search::Request]
       #
       #   @overload post_filter
@@ -280,7 +279,7 @@ module Chewy
       #     PlacesIndex.order(:name, population: {order: :asc}).order(:coordinates)
       #     # => <PlacesIndex::Query {..., :body=>{:sort=>["name", {"population"=>{:order=>:asc}}, "coordinates"]}}>
       #   @see Chewy::Search::Parameters::Order
-      #   @see https://www.elastic.co/guide/en/elasticsearch/reference/current/search-request-sort.html
+      #   @see https://www.elastic.co/guide/en/elasticsearch/reference/current/sort-search-results.html
       #   @param values [Array<Hash, String, Symbol>] sort fields and options
       #   @return [Chewy::Search::Request]
       #
@@ -291,7 +290,7 @@ module Chewy
       #     PlacesIndex.docvalue_fields(:name).docvalue_fields(:population, :coordinates)
       #     # => <PlacesIndex::Query {..., :body=>{:docvalue_fields=>["name", "population", "coordinates"]}}>
       #   @see Chewy::Search::Parameters::DocvalueFields
-      #   @see https://www.elastic.co/guide/en/elasticsearch/reference/current/search-request-docvalue-fields.html
+      #   @see https://www.elastic.co/guide/en/elasticsearch/reference/current/search-fields.html#docvalue-fields
       #   @param values [Array<String, Symbol>] field names
       #   @return [Chewy::Search::Request]
       %i[order docvalue_fields].each do |name|
@@ -300,34 +299,18 @@ module Chewy
         end
       end
 
-      # @!method indices(*values)
-      #   Modifies `index` request parameter. Updates the storage on every call.
-      #   Added passed indexes to the parameter list.
+      # Modifies `index` request parameter. Updates the storage on every call.
+      # Added passed indexes to the parameter list.
       #
-      #   @example
-      #     UsersIndex.indices(CitiesIndex).indices(:another)
-      #     # => <UsersIndex::Query {:index=>["another", "cities", "users"], :type=>["city", "user"]}>
-      #   @see Chewy::Search::Parameters::Indices
-      #   @see https://www.elastic.co/guide/en/elasticsearch/reference/current/search-search.html
-      #   @param values [Array<Chewy::Index, String, Symbol>] index names
-      #   @return [Chewy::Search::Request]
-      #
-      # @!method types(*values)
-      #   Modifies `type` request parameter. Updates the storage on every call.
-      #   Constrains types passed on the request initialization or adds them
-      #   to the list depending on circumstances.
-      #
-      #   @example
-      #     UsersIndex.types(CitiesIndex::City).types(:unexistent)
-      #     # => <UsersIndex::Query {:index=>["cities", "users"], :type=>["city", "user"]}>
-      #   @see Chewy::Search::Parameters::Indices
-      #   @see https://www.elastic.co/guide/en/elasticsearch/reference/current/search-search.html
-      #   @param values [Array<Chewy::Type, String, Symbol>] type names
-      #   @return [Chewy::Search::Request]
-      %i[indices types].each do |name|
-        define_method name do |value, *values|
-          modify(:indices) { update!(name => [value, *values]) }
-        end
+      # @example
+      #   UsersIndex.indices(CitiesIndex).indices(:another)
+      #   # => <UsersIndex::Query {:index=>["another", "cities", "users"]}>
+      # @see Chewy::Search::Parameters::Indices
+      # @see https://www.elastic.co/guide/en/elasticsearch/reference/current/search-search.html
+      # @param values [Array<Chewy::Index, String, Symbol>] index names
+      # @return [Chewy::Search::Request]
+      def indices(value, *values)
+        modify(:indices) { update!(indices: [value, *values]) }
       end
 
       # @overload reorder(*values)
@@ -337,7 +320,7 @@ module Chewy
       #     PlacesIndex.order(:name, population: {order: :asc}).reorder(:coordinates)
       #     # => <PlacesIndex::Query {..., :body=>{:sort=>["coordinates"]}}>
       #   @see Chewy::Search::Parameters::Order
-      #   @see https://www.elastic.co/guide/en/elasticsearch/reference/current/search-request-sort.html
+      #   @see https://www.elastic.co/guide/en/elasticsearch/reference/current/sort-search-results.html
       #   @param values [Array<Hash, String, Symbol>] sort fields and options
       #   @return [Chewy::Search::Request]
       def reorder(value, *values)
@@ -351,9 +334,22 @@ module Chewy
       #     PlacesIndex.track_scores
       #     # => <PlacesIndex::Query {..., :body=>{:track_scores=>true}}>
       #     PlacesIndex.track_scores.track_scores(false)
-      #     # => <PlacesIndex::Query {:index=>["places"], :type=>["city", "country"]}>
+      #     # => <PlacesIndex::Query {:index=>["places"]}>
       #   @see Chewy::Search::Parameters::TrackScores
-      #   @see https://www.elastic.co/guide/en/elasticsearch/reference/5.4/search-request-sort.html#_track_scores
+      #   @see https://www.elastic.co/guide/en/elasticsearch/reference/current/sort-search-results.html#_track_scores
+      #   @param value [true, false]
+      #   @return [Chewy::Search::Request]
+      #
+      # @!method track_total_hits(value = true)
+      #   Replaces the value of the `track_total_hits` parameter with the provided value.
+      #
+      #   @example
+      #     PlacesIndex.track_total_hits
+      #     # => <PlacesIndex::Query {..., :body=>{:track_total_hits=>true}}>
+      #     PlacesIndex.track_total_hits.track_total_hits(false)
+      #     # => <PlacesIndex::Query {:index=>["places"]}>
+      #   @see Chewy::Search::Parameters::TrackTotalHits
+      #   @see https://www.elastic.co/guide/en/elasticsearch/reference/current/search-your-data.html#track-total-hits
       #   @param value [true, false]
       #   @return [Chewy::Search::Request]
       #
@@ -364,9 +360,9 @@ module Chewy
       #     PlacesIndex.explain
       #     # => <PlacesIndex::Query {..., :body=>{:explain=>true}}>
       #     PlacesIndex.explain.explain(false)
-      #     # => <PlacesIndex::Query {:index=>["places"], :type=>["city", "country"]}>
+      #     # => <PlacesIndex::Query {:index=>["places"]}>
       #   @see Chewy::Search::Parameters::Explain
-      #   @see https://www.elastic.co/guide/en/elasticsearch/reference/5.4/search-request-explain.html
+      #   @see https://www.elastic.co/guide/en/elasticsearch/reference/current/search-explain.html
       #   @param value [true, false]
       #   @return [Chewy::Search::Request]
       #
@@ -377,9 +373,9 @@ module Chewy
       #     PlacesIndex.version
       #     # => <PlacesIndex::Query {..., :body=>{:version=>true}}>
       #     PlacesIndex.version.version(false)
-      #     # => <PlacesIndex::Query {:index=>["places"], :type=>["city", "country"]}>
+      #     # => <PlacesIndex::Query {:index=>["places"]}>
       #   @see Chewy::Search::Parameters::Version
-      #   @see https://www.elastic.co/guide/en/elasticsearch/reference/5.4/search-request-version.html
+      #   @see https://www.elastic.co/guide/en/elasticsearch/reference/current/search-search.html
       #   @param value [true, false]
       #   @return [Chewy::Search::Request]
       #
@@ -390,9 +386,9 @@ module Chewy
       #     PlacesIndex.profile
       #     # => <PlacesIndex::Query {..., :body=>{:profile=>true}}>
       #     PlacesIndex.profile.profile(false)
-      #     # => <PlacesIndex::Query {:index=>["places"], :type=>["city", "country"]}>
+      #     # => <PlacesIndex::Query {:index=>["places"]}>
       #   @see Chewy::Search::Parameters::Profile
-      #   @see https://www.elastic.co/guide/en/elasticsearch/reference/5.4/search-profile.html
+      #   @see https://www.elastic.co/guide/en/elasticsearch/reference/current/search-profile.html
       #   @param value [true, false]
       #   @return [Chewy::Search::Request]
       #
@@ -409,7 +405,7 @@ module Chewy
       #   @see https://en.wikipedia.org/wiki/Null_Object_pattern
       #   @param value [true, false]
       #   @return [Chewy::Search::Request]
-      %i[track_scores explain version profile none].each do |name|
+      %i[track_scores track_total_hits explain version profile none].each do |name|
         define_method name do |value = true|
           modify(name) { replace!(value) }
         end
@@ -426,7 +422,7 @@ module Chewy
       #     PlacesIndex.request_cache(false)
       #     # => <PlacesIndex::Query {..., :body=>{:request_cache=>false}}>
       #   @see Chewy::Search::Parameters::RequestCache
-      #   @see https://www.elastic.co/guide/en/elasticsearch/reference/5.4/shard-request-cache.html#_enabling_and_disabling_caching_per_request
+      #   @see https://www.elastic.co/guide/en/elasticsearch/reference/current/shard-request-cache.html#_enabling_and_disabling_caching_per_request
       #   @param value [true, false, nil]
       #   @return [Chewy::Search::Request]
       #
@@ -437,7 +433,7 @@ module Chewy
       #     PlacesIndex.search_type(:dfs_query_then_fetch)
       #     # => <PlacesIndex::Query {..., :body=>{:search_type=>"dfs_query_then_fetch"}}>
       #   @see Chewy::Search::Parameters::SearchType
-      #   @see https://www.elastic.co/guide/en/elasticsearch/reference/5.4/search-request-search-type.html
+      #   @see https://www.elastic.co/guide/en/elasticsearch/reference/current/search-search.html#search-type
       #   @param value [String, Symbol]
       #   @return [Chewy::Search::Request]
       #
@@ -448,7 +444,7 @@ module Chewy
       #     PlacesIndex.preference(:_primary_first)
       #     # => <PlacesIndex::Query {..., :body=>{:preference=>"_primary_first"}}>
       #   @see Chewy::Search::Parameters::Preference
-      #   @see https://www.elastic.co/guide/en/elasticsearch/reference/5.4/search-request-preference.html
+      #   @see https://www.elastic.co/guide/en/elasticsearch/reference/current/search-search.html#search-preference
       #   @param value [String, Symbol]
       #   @return [Chewy::Search::Request]
       #
@@ -459,7 +455,7 @@ module Chewy
       #     PlacesIndex.timeout('1m')
       #     <PlacesIndex::Query {..., :body=>{:timeout=>"1m"}}>
       #   @see Chewy::Search::Parameters::Timeout
-      #   @see https://www.elastic.co/guide/en/elasticsearch/reference/5.4/common-options.html#time-units
+      #   @see https://www.elastic.co/guide/en/elasticsearch/reference/current/common-options.html#time-units
       #   @param value [String, Symbol]
       #   @return [Chewy::Search::Request]
       #
@@ -470,7 +466,7 @@ module Chewy
       #     PlacesIndex.limit(10)
       #     <PlacesIndex::Query {..., :body=>{:size=>10}}>
       #   @see Chewy::Search::Parameters::Limit
-      #   @see https://www.elastic.co/guide/en/elasticsearch/reference/5.4/search-request-from-size.html
+      #   @see https://www.elastic.co/guide/en/elasticsearch/reference/current/paginate-search-results.html
       #   @param value [String, Integer]
       #   @return [Chewy::Search::Request]
       #
@@ -481,7 +477,7 @@ module Chewy
       #     PlacesIndex.offset(10)
       #     <PlacesIndex::Query {..., :body=>{:from=>10}}>
       #   @see Chewy::Search::Parameters::Offset
-      #   @see https://www.elastic.co/guide/en/elasticsearch/reference/5.4/search-request-from-size.html
+      #   @see https://www.elastic.co/guide/en/elasticsearch/reference/current/paginate-search-results.html
       #   @param value [String, Integer]
       #   @return [Chewy::Search::Request]
       #
@@ -492,7 +488,7 @@ module Chewy
       #     PlacesIndex.terminate_after(10)
       #     <PlacesIndex::Query {..., :body=>{:terminate_after=>10}}>
       #   @see Chewy::Search::Parameters::Offset
-      #   @see https://www.elastic.co/guide/en/elasticsearch/reference/5.4/search-request-body.html
+      #   @see https://www.elastic.co/guide/en/elasticsearch/reference/current/search-your-data.html#quickly-check-for-matching-docs
       #   @param value [String, Integer]
       #   @return [Chewy::Search::Request]
       #
@@ -503,10 +499,43 @@ module Chewy
       #     PlacesIndex.min_score(2)
       #     <PlacesIndex::Query {..., :body=>{:min_score=>2.0}}>
       #   @see Chewy::Search::Parameters::Offset
-      #   @see https://www.elastic.co/guide/en/elasticsearch/reference/5.4/search-request-min-score.html
+      #   @see https://www.elastic.co/guide/en/elasticsearch/reference/current/search-search.html#search-api-min-score
       #   @param value [String, Integer, Float]
       #   @return [Chewy::Search::Request]
-      %i[request_cache search_type preference timeout limit offset terminate_after min_score track_total_hits].each do |name|
+      #
+      # @!method ignore_unavailable(value)
+      #   Replaces the value of the `ignore_unavailable` request part.
+      #
+      #   @example
+      #     PlacesIndex.ignore_unavailable(true)
+      #     <PlacesIndex::Query {..., :ignore_unavailable => true, :body=>{ ... }}>
+      #   @see Chewy::Search::Parameters::IgnoreUnavailable
+      #   @see https://www.elastic.co/guide/en/elasticsearch/reference/current/multi-index.html#multi-index
+      #   @param value [true, false, nil]
+      #   @return [Chewy::Search::Request]
+      #
+      # @!method collapse(value)
+      #   Replaces the value of the `collapse` request part.
+      #
+      #   @example
+      #     PlacesIndex.collapse(field: :name)
+      #     # => <PlacesIndex::Query {..., :body=>{:collapse=>{"field"=>:name}}}>
+      #   @see Chewy::Search::Parameters::Collapse
+      #   @see https://www.elastic.co/guide/en/elasticsearch/reference/current/collapse-search-results.html
+      #   @param value [Hash]
+      #   @return [Chewy::Search::Request]
+      #
+      # @!method knn(value)
+      #   Replaces the value of the `knn` request part.
+      #
+      #   @example
+      #     PlacesIndex.knn(field: :vector, query_vector: [4, 2], k: 5, num_candidates: 50)
+      #     # => <PlacesIndex::Query {..., :body=>{:knn=>{"field"=>:vector, "query_vector"=>[4, 2], "k"=>5, "num_candidates"=>50}}}>
+      #   @see Chewy::Search::Parameters::Knn
+      #   @see https://www.elastic.co/guide/en/elasticsearch/reference/current/knn-search.html
+      #   @param value [Hash]
+      #   @return [Chewy::Search::Request]
+      %i[request_cache search_type preference timeout limit offset terminate_after min_score ignore_unavailable collapse knn track_total_hits].each do |name|
         define_method name do |value|
           modify(name) { replace!(value) }
         end
@@ -515,7 +544,7 @@ module Chewy
       # @!method source(*values)
       #   Updates `_source` request part. Accepts either an array
       #   of field names/templates or a hash with `includes` and `excludes`
-      #   keys. Source also can be disabled entierly or enabled again.
+      #   keys. Source also can be disabled entirely or enabled again.
       #
       #   @example
       #     PlacesIndex.source(:name).source(includes: [:popularity], excludes: :description)
@@ -523,13 +552,13 @@ module Chewy
       #     PlacesIndex.source(false)
       #     # => <PlacesIndex::Query {..., :body=>{:_source=>false}}>
       #   @see Chewy::Search::Parameters::Source
-      #   @see https://www.elastic.co/guide/en/elasticsearch/reference/5.4/search-request-source-filtering.html
+      #   @see https://www.elastic.co/guide/en/elasticsearch/reference/current/search-fields.html#source-filtering
       #   @param values [true, false, {Symbol => Array<String, Symbol>, String, Symbol}, Array<String, Symbol>, String, Symbol]
       #   @return [Chewy::Search::Request]
       #
       # @!method stored_fields(*values)
       #   Updates `stored_fields` request part. Accepts an array of field
-      #   names. Can be entierly disabled and enabled back.
+      #   names. Can be entirely disabled and enabled back.
       #
       #   @example
       #     PlacesIndex.stored_fields(:name).stored_fields(:description)
@@ -537,7 +566,7 @@ module Chewy
       #     PlacesIndex.stored_fields(false)
       #     # => <PlacesIndex::Query {..., :body=>{:stored_fields=>"_none_"}}>
       #   @see Chewy::Search::Parameters::StoredFields
-      #   @see https://www.elastic.co/guide/en/elasticsearch/reference/5.4/search-request-stored-fields.html
+      #   @see https://www.elastic.co/guide/en/elasticsearch/reference/current/search-fields.html#stored-fields
       #   @param values [true, false, String, Symbol, Array<String, Symbol>]
       #   @return [Chewy::Search::Request]
       %i[source stored_fields].each do |name|
@@ -553,7 +582,7 @@ module Chewy
       #   PlacesIndex.search_after(42, 'Moscow').search_after('London')
       #   # => <PlacesIndex::Query {..., :body=>{:search_after=>["London"]}}>
       # @see Chewy::Search::Parameters::SearchAfter
-      # @see https://www.elastic.co/guide/en/elasticsearch/reference/5.4/search-request-search-after.html
+      # @see https://www.elastic.co/guide/en/elasticsearch/reference/current/paginate-search-results.html#search-after
       # @param value [Array, Object]
       # @return [Chewy::Search::Request]
       def search_after(value, *values)
@@ -561,9 +590,9 @@ module Chewy
       end
 
       # Stores ORM/ODM objects loading options. Options
-      # might be define per-type or be global, depends on the adapter
+      # might be define per-index or be global, depends on the adapter
       # loading implementation. Also, there are 2 loading options to select
-      # or exclude types from loading: `only` and `except` respectively.
+      # or exclude indexes from loading: `only` and `except` respectively.
       # Options are updated on further method calls.
       #
       # @example
@@ -588,7 +617,7 @@ module Chewy
       #     #      "field1"=>{:script=>{:lang=>"painless", :inline=>"some script here"}},
       #     #      "field2"=>{:script=>{:lang=>"painless", :inline=>"some script here"}}}}}>
       #   @see Chewy::Search::Parameters::ScriptFields
-      #   @see https://www.elastic.co/guide/en/elasticsearch/reference/5.4/search-request-script-fields.html
+      #   @see https://www.elastic.co/guide/en/elasticsearch/reference/current/search-fields.html#script-fields
       #   @param value [Hash]
       #   @return [Chewy::Search::Request]
       #
@@ -600,7 +629,7 @@ module Chewy
       #     PlacesIndex.indices_boost(index1: 1.2, index2: 1.3).indices_boost(index1: 1.5)
       #     # => <PlacesIndex::Query {..., :body=>{:indices_boost=>[{"index2"=>1.3}, {"index1"=>1.5}]}}>
       #   @see Chewy::Search::Parameters::IndicesBoost
-      #   @see https://www.elastic.co/guide/en/elasticsearch/reference/5.4/search-request-index-boost.html
+      #   @see https://www.elastic.co/guide/en/elasticsearch/reference/current/search-multiple-indices.html#index-boost
       #   @param value [{String, Symbol => String, Integer, Float}]
       #   @return [Chewy::Search::Request]
       #
@@ -612,7 +641,7 @@ module Chewy
       #     PlacesIndex.rescore(window_size: 100, query: {}).rescore(window_size: 200, query: {})
       #     # => <PlacesIndex::Query {..., :body=>{:rescore=>[{:window_size=>100, :query=>{}}, {:window_size=>200, :query=>{}}]}}>
       #   @see Chewy::Search::Parameters::Rescore
-      #   @see https://www.elastic.co/guide/en/elasticsearch/reference/5.4/search-request-rescore.html
+      #   @see https://www.elastic.co/guide/en/elasticsearch/reference/current/filter-search-results.html#rescore
       #   @param value [Hash, Array<Hash>]
       #   @return [Chewy::Search::Request]
       #
@@ -628,7 +657,7 @@ module Chewy
       #     #      "fields"=>{:description=>{:type=>"plain"}},
       #     #      "pre_tags"=>["<em>"], "post_tags"=>["</em>"]}}}>
       #   @see Chewy::Search::Parameters::Highlight
-      #   @see https://www.elastic.co/guide/en/elasticsearch/reference/5.4/search-request-highlighting.html
+      #   @see https://www.elastic.co/guide/en/elasticsearch/reference/current/highlighting.html
       #   @param value [Hash]
       #   @return [Chewy::Search::Request]
       %i[script_fields indices_boost rescore highlight].each do |name|
@@ -651,7 +680,7 @@ module Chewy
       #     #      "names"=>{:text=>"tring out Elasticsearch"},
       #     #      "descriptions"=>{:text=>"some other text"}}}}>
       #   @see Chewy::Search::Parameters::Suggest
-      #   @see https://www.elastic.co/guide/en/elasticsearch/reference/5.4/search-suggesters.html
+      #   @see https://www.elastic.co/guide/en/elasticsearch/reference/current/search-suggesters.html
       #   @param value [Hash]
       #   @return [Chewy::Search::Request]
       #
@@ -737,7 +766,10 @@ module Chewy
       #     scope1.and(scope2)
       #     # => <PlacesIndex::Query {..., :body=>{:query=>{:bool=>{
       #     #      :must=>[{:match=>{:name=>"London"}}, {:match=>{:name=>"Washington"}}],
-      #     #      :filter=>{:bool=>{:must=>[{:term=>{:name=>"Moscow"}}, {:bool=>{:must_not=>{:term=>{:name=>"Berlin"}}}}]}}}}}}>
+      #     #      :filter=>{
+      #     #        :bool=>{:must=>[{:term=>{:name=>"Moscow"}}, {:bool=>{:must_not=>{:term=>{:name=>"Berlin"}}}}]}
+      #     #      }
+      #     #    }}}}>
       #   @param other [Chewy::Search::Request] scope to merge
       #   @return [Chewy::Search::Request] new scope
       #
@@ -754,7 +786,10 @@ module Chewy
       #     scope1.or(scope2)
       #     # => <PlacesIndex::Query {..., :body=>{:query=>{:bool=>{
       #     #      :should=>[{:match=>{:name=>"London"}}, {:match=>{:name=>"Washington"}}],
-      #     #      :filter=>{:bool=>{:should=>[{:term=>{:name=>"Moscow"}}, {:bool=>{:must_not=>{:term=>{:name=>"Berlin"}}}}]}}}}}}>
+      #     #      :filter=>{
+      #     #        :bool=>{:should=>[{:term=>{:name=>"Moscow"}}, {:bool=>{:must_not=>{:term=>{:name=>"Berlin"}}}}]}
+      #     #      }
+      #     #    }}}}>
       #   @param other [Chewy::Search::Request] scope to merge
       #   @return [Chewy::Search::Request] new scope
       #
@@ -771,7 +806,13 @@ module Chewy
       #     scope1.not(scope2)
       #     # => <PlacesIndex::Query {..., :body=>{:query=>{:bool=>{
       #     #      :must=>{:match=>{:name=>"London"}}, :must_not=>{:match=>{:name=>"Washington"}},
-      #     #      :filter=>{:bool=>{:must=>{:term=>{:name=>"Moscow"}}, :must_not=>{:bool=>{:must_not=>{:term=>{:name=>"Berlin"}}}}}}}}}}>
+      #     #      :filter=>{
+      #     #        :bool=>{
+      #     #          :must=>{:term=>{:name=>"Moscow"}},
+      #     #          :must_not=>{:bool=>{:must_not=>{:term=>{:name=>"Berlin"}}}}
+      #     #        }
+      #     #      }
+      #     #    }}}}>
       #   @param other [Chewy::Search::Request] scope to merge
       #   @return [Chewy::Search::Request] new scope
       %i[and or not].each do |name|
@@ -785,8 +826,8 @@ module Chewy
       # Returns a new scope containing only specified storages.
       #
       # @example
-      #   PlacesIndex.limit(10).offset(10).order(:name).except(:offset, :order)
-      #   # => <PlacesIndex::Query {..., :body=>{:size=>10}}>
+      #   PlacesIndex.limit(10).offset(10).order(:name).only(:offset, :order)
+      #   # => <PlacesIndex::Query {..., :body=>{:from=>10, :sort=>["name"]}}>
       # @param values [Array<String, Symbol>]
       # @return [Chewy::Search::Request] new scope
       def only(*values)
@@ -796,8 +837,8 @@ module Chewy
       # Returns a new scope containing all the storages except specified.
       #
       # @example
-      #   PlacesIndex.limit(10).offset(10).order(:name).only(:offset, :order)
-      #   # => <PlacesIndex::Query {..., :body=>{:from=>10, :sort=>["name"]}}>
+      #   PlacesIndex.limit(10).offset(10).order(:name).except(:offset, :order)
+      #   # => <PlacesIndex::Query {..., :body=>{:size=>10}}>
       # @param values [Array<String, Symbol>]
       # @return [Chewy::Search::Request] new scope
       def except(*values)
@@ -847,14 +888,14 @@ module Chewy
       # @overload first
       #   If nothing is passed - it returns a single object.
       #
-      #   @return [Chewy::Type] result document
+      #   @return [Chewy::Index] result document
       #
       # @overload first(limit)
       #   If limit is provided - it returns the limit amount or less
       #   of wrapper objects.
       #
       #   @param limit [Integer] amount of requested results
-      #   @return [Array<Chewy::Type>] result document collection
+      #   @return [Array<Chewy::Index>] result document collection
       def first(limit = UNDEFINED)
         request_limit = limit == UNDEFINED ? 1 : limit
 
@@ -873,7 +914,7 @@ module Chewy
       #   If single id is passed - it returns a single object.
       #
       #   @param id [Integer, String] id of the desired document
-      #   @return [Chewy::Type] result document
+      #   @return [Chewy::Index] result document
       #
       # @overload find(*ids)
       #   If several field are passed - it returns an array of wrappers.
@@ -881,7 +922,7 @@ module Chewy
       #   batch size - uses scroll API to retrieve everything.
       #
       #   @param ids [Array<Integer, String>] ids of the desired documents
-      #   @return [Array<Chewy::Type>] result documents
+      #   @return [Array<Chewy::Index>] result documents
       def find(*ids)
         return super if block_given?
 
@@ -903,7 +944,7 @@ module Chewy
 
       # Returns and array of values for specified fields.
       # Uses `source` to restrict the list of returned fields.
-      # Fields `_id`, `_type` and `_index` are also supported.
+      # Fields `_id`, `_type`, `_routing` and `_index` are also supported.
       #
       # @overload pluck(field)
       #   If single field is passed - it returns and array of values.
@@ -936,24 +977,37 @@ module Chewy
       end
 
       # Deletes all the documents from the specified scope it uses
-      # `delete_by_query` API. For ES < 5.0 it uses `delete_by_query`
-      # plugin, which requires additional installation effort.
+      # `delete_by_query`
       #
       # @see https://www.elastic.co/guide/en/elasticsearch/reference/current/docs-delete-by-query.html
-      # @see https://www.elastic.co/guide/en/elasticsearch/plugins/2.0/plugins-delete-by-query.html
       # @note The result hash is different for different API used.
-      # @param refresh [true, false] field names
+      # @param refresh [true, false] Refreshes all shards involved in the delete by query
+      # @param wait_for_completion [true, false] wait for request completion or run it asynchronously
+      #    and return task reference at `.tasks/task/${taskId}`.
+      # @param requests_per_second [Float] The throttle for this request in sub-requests per second
+      # @param scroll_size [Integer] Size of the scroll request that powers the operation
+
       # @return [Hash] the result of query execution
-      def delete_all(refresh: true)
-        request_body = only(WHERE_STORAGES).render.merge({refresh: refresh})
-        ActiveSupport::Notifications.instrument 'delete_query.chewy',
-          notification_payload(request: request_body) do
-            if Runtime.version < '5.0'
-              delete_by_query_plugin(request_body)
-            else
-              Chewy.client(_indices.first.hosts_name).delete_by_query(request_body)
-            end
-          end
+      def delete_all(refresh: true, wait_for_completion: nil, requests_per_second: nil, scroll_size: nil)
+        request_body = only(WHERE_STORAGES).render.merge(
+          {
+            refresh: refresh,
+            wait_for_completion: wait_for_completion,
+            requests_per_second: requests_per_second,
+            scroll_size: scroll_size
+          }.compact
+        )
+        ActiveSupport::Notifications.instrument 'delete_query.chewy', notification_payload(request: request_body) do
+          request_body[:body] = {query: {match_all: {}}} if request_body[:body].empty?
+          Chewy.client.delete_by_query(request_body)
+        end
+      end
+
+      # Returns whether or not the query has been performed.
+      #
+      # @return [true, false]
+      def performed?
+        !@response.nil?
       end
 
     protected
@@ -964,6 +1018,10 @@ module Chewy
       end
 
     private
+
+      def build_response(raw_response)
+        Response.new(raw_response, loader, collection_paginator)
+      end
 
       def compare_internals(other)
         parameters == other.parameters
@@ -998,9 +1056,8 @@ module Chewy
 
       def notification_payload(additional)
         {
-          indexes: _indices, types: _types,
-          index: _indices.one? ? _indices.first : _indices,
-          type: _types.one? ? _types.first : _types
+          indexes: _indices,
+          index: _indices.one? ? _indices.first : _indices
         }.merge(additional)
       end
 

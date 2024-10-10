@@ -1,66 +1,15 @@
 [![Gem Version](https://badge.fury.io/rb/chewy.svg)](http://badge.fury.io/rb/chewy)
-[![Build Status](https://travis-ci.org/toptal/chewy.svg)](https://travis-ci.org/toptal/chewy)
+[![GitHub Actions](https://github.com/toptal/chewy/actions/workflows/ruby.yml/badge.svg)](https://github.com/toptal/chewy/actions/workflows/ruby.yml)
 [![Code Climate](https://codeclimate.com/github/toptal/chewy.svg)](https://codeclimate.com/github/toptal/chewy)
 [![Inline docs](http://inch-ci.org/github/toptal/chewy.svg?branch=master)](http://inch-ci.org/github/toptal/chewy)
 
-<p align="right">Sponsored by</p>
-<p align="right"><a href="https://www.toptal.com/"><img src="https://www.toptal.com/assets/public/blocks/logo/big.png" alt="Toptal" width="105" height="34"></a></p>
-
 # Chewy
 
-Chewy is an ODM and wrapper for [the official Elasticsearch client](https://github.com/elastic/elasticsearch-ruby).
-
-## Table of Contents
-
-* [Why Chewy?](#why-chewy)
-* [Installation](#installation)
-* [Usage](#usage)
-  * [Client settings](#client-settings)
-    * [AWS ElasticSearch configuration](#aws-elastic-search)
-  * [Index definition](#index-definition)
-  * [Type default import options](#type-default-import-options)
-  * [Multi (nested) and object field types](#multi-nested-and-object-field-types)
-  * [Parent and children types](#parent-and-children-types)
-  * [Geo Point fields](#geo-point-fields)
-  * [Crutches™ technology](#crutches-technology)
-  * [Witchcraft™ technology](#witchcraft-technology)
-  * [Raw Import](#raw-import)
-  * [Index creation during import](#index-creation-during-import)
-  * [Journaling](#journaling)
-  * [Types access](#types-access)
-  * [Index manipulation](#index-manipulation)
-  * [Index update strategies](#index-update-strategies)
-    * [Nesting](#nesting)
-    * [Non-block notation](#non-block-notation)
-    * [Designing your own strategies](#designing-your-own-strategies)
-  * [Rails application strategies integration](#rails-application-strategies-integration)
-  * [ActiveSupport::Notifications support](#activesupportnotifications-support)
-  * [NewRelic integration](#newrelic-integration)
-  * [Search requests](#search-requests)
-    * [Composing requests](#composing-requests)
-    * [Pagination](#pagination)
-    * [Named scopes](#named-scopes)
-    * [Scroll API](#scroll-api)
-    * [Loading objects](#loading-objects)
-    * [Legacy DSL incompatibilities](#legacy-dsl-incompatibilities)
-  * [Rake tasks](#rake-tasks)
-    * [chewy:reset](#chewyreset)
-    * [chewy:upgrade](#chewyupgrade)
-    * [chewy:update](#chewyupdate)
-    * [chewy:sync](#chewysync)
-    * [chewy:deploy](#chewydeploy)
-    * [Parallelizing rake tasks](#parallelizing-rake-tasks)
-    * [chewy:journal](#chewyjournal)
-  * [Rspec integration](#rspec-integration)
-  * [Minitest integration](#minitest-integration)
-* [TODO a.k.a coming soon](#todo-aka-coming-soon)
-* [Contributing](#contributing)
+Chewy is an ODM (Object Document Mapper), built on top of [the official Elasticsearch client](https://github.com/elastic/elasticsearch-ruby).
 
 ## Why Chewy?
 
-* Multi-model indices.
-
-  Index classes are independent from ORM/ODM models. Now, implementing e.g. cross-model autocomplete is much easier. You can just define the index and work with it in an object-oriented style. You can define several types for index - one per indexed model.
+In this section we'll cover why you might want to use Chewy instead of the official `elasticsearch-ruby` client gem.
 
 * Every index is observable by all the related models.
 
@@ -74,12 +23,11 @@ Chewy is an ODM and wrapper for [the official Elasticsearch client](https://gith
 
   Chewy has an ActiveRecord-style query DSL. It is chainable, mergeable and lazy, so you can produce queries in the most efficient way. It also has object-oriented query and filter builders.
 
-* Support for ActiveRecord, [Mongoid](https://github.com/mongoid/mongoid) and [Sequel](https://github.com/jeremyevans/sequel).
-
+* Support for ActiveRecord.
 
 ## Installation
 
-Add this line to your application's Gemfile:
+Add this line to your application's `Gemfile`:
 
     gem 'chewy'
 
@@ -91,18 +39,180 @@ Or install it yourself as:
 
     $ gem install chewy
 
-## Usage
+## Compatibility
+
+### Ruby
+
+Chewy is compatible with MRI 3.0-3.2¹.
+
+> ¹ Ruby 3 is only supported with Rails 6.1
+
+### Elasticsearch compatibility matrix
+
+| Chewy version | Elasticsearch version              |
+| ------------- | ---------------------------------- |
+| 7.2.x         | 7.x                                |
+| 7.1.x         | 7.x                                |
+| 7.0.x         | 6.8, 7.x                           |
+| 6.0.0         | 5.x, 6.x                           |
+| 5.x           | 5.x, limited support for 1.x & 2.x |
+
+**Important:** Chewy doesn't follow SemVer, so you should always
+check the release notes before upgrading. The major version is linked to the
+newest supported Elasticsearch and the minor version bumps may include breaking changes.
+
+See our [migration guide](migration_guide.md) for detailed upgrade instructions between
+various Chewy versions.
+
+### Active Record
+
+5.2, 6.0, 6.1 Active Record versions are supported by all Chewy versions.
+
+## Getting Started
+
+Chewy provides functionality for Elasticsearch index handling, documents import mappings, index update strategies and chainable query DSL.
+
+### Minimal client setting
+
+Create `config/initializers/chewy.rb` with this line:
+
+```ruby
+Chewy.settings = {host: 'localhost:9250'}
+```
+
+And run `rails g chewy:install` to generate `chewy.yml`:
+
+```yaml
+# config/chewy.yml
+# separate environment configs
+test:
+  host: 'localhost:9250'
+  prefix: 'test'
+development:
+  host: 'localhost:9200'
+```
+
+### Elasticsearch
+
+Make sure you have Elasticsearch up and running. You can [install](https://www.elastic.co/guide/en/elasticsearch/reference/current/install-elasticsearch.html) it locally, but the easiest way is to use [Docker](https://www.docker.com/get-started):
+
+```shell
+$ docker run --rm --name elasticsearch -p 9200:9200 -p 9300:9300 -e "discovery.type=single-node" elasticsearch:7.11.1
+```
+
+### Index
+
+Create `app/chewy/users_index.rb` with User Index:
+
+```ruby
+class UsersIndex < Chewy::Index
+  settings analysis: {
+    analyzer: {
+      email: {
+        tokenizer: 'keyword',
+        filter: ['lowercase']
+      }
+    }
+  }
+
+  index_scope User
+  field :first_name
+  field :last_name
+  field :email, analyzer: 'email'
+end
+```
+
+### Model
+
+Add User model, table and migrate it:
+
+```shell
+$ bundle exec rails g model User first_name last_name email
+$ bundle exec rails db:migrate
+```
+
+Add `update_index` to app/models/user.rb:
+
+```ruby
+class User < ApplicationRecord
+  update_index('users') { self }
+end
+```
+
+### Example of data request
+
+1. Once a record is created (could be done via the Rails console), it creates User index too:
+
+```
+User.create(
+  first_name: "test1",
+  last_name: "test1",
+  email: 'test1@example.com',
+  # other fields
+)
+# UsersIndex Import (355.3ms) {:index=>1}
+# => #<User id: 1, first_name: "test1", last_name: "test1", email: "test1@example.com", # other fields>
+```
+
+2. A query could be exposed at a given `UsersController`:
+
+```ruby
+def search
+  @users = UsersIndex.query(query_string: { fields: [:first_name, :last_name, :email, ...], query: search_params[:query], default_operator: 'and' })
+  render json: @users.to_json, status: :ok
+end
+
+private
+
+def search_params
+  params.permit(:query, :page, :per)
+end
+```
+
+3. So a request against `http://localhost:3000/users/search?query=test1@example.com` issuing a response like:
+
+```json
+[
+  {
+    "attributes":{
+      "id":"1",
+      "first_name":"test1",
+      "last_name":"test1",
+      "email":"test1@example.com",
+      ...
+      "_score":0.9808291,
+      "_explanation":null
+    },
+    "_data":{
+      "_index":"users",
+      "_type":"_doc",
+      "_id":"1",
+      "_score":0.9808291,
+      "_source":{
+        "first_name":"test1",
+        "last_name":"test1",
+        "email":"test1@example.com",
+        ...
+      }
+    }
+  }
+]
+```
+
+## Usage and configuration
 
 ### Client settings
 
-There are two ways to configure the Chewy client: the `Chewy.settings` hash and `chewy.yml`
-
-You can create this file manually or run `rails g chewy:install`.
+To configure the Chewy client you need to add `chewy.rb` file with `Chewy.settings` hash:
 
 ```ruby
 # config/initializers/chewy.rb
 Chewy.settings = {host: 'localhost:9250'} # do not use environments
 ```
+
+And add `chewy.yml` configuration file.
+
+You can create `chewy.yml` manually or run `rails g chewy:install` to generate it:
 
 ```yaml
 # config/chewy.yml
@@ -129,27 +239,31 @@ Chewy.logger = Logger.new(STDOUT)
 
 See [config.rb](lib/chewy/config.rb) for more details.
 
-#### Aws Elastic Search
-If you would like to use AWS's ElasticSearch using an IAM user policy, you will need to sign your requests for the `es:*` action by injecting the appropriate headers passing a proc to `transport_options`.
+#### AWS Elasticsearch
+
+If you would like to use AWS's Elasticsearch using an IAM user policy, you will need to sign your requests for the `es:*` action by injecting the appropriate headers passing a proc to `transport_options`.
+You'll need an additional gem for Faraday middleware: add `gem 'faraday_middleware-aws-sigv4'` to your Gemfile.
 
 ```ruby
- Chewy.settings = {
-    host: 'http://my-es-instance-on-aws.us-east-1.es.amazonaws.com:80',
-    transport_options: {
-      headers: { content_type: 'application/json' },
-      proc: -> (f) do
-          f.request :aws_signers_v4,
-                    service_name: 'es',
-                    region: 'us-east-1',
-                    credentials: Aws::Credentials.new(
-                      ENV['AWS_ACCESS_KEY'],
-                      ENV['AWS_SECRET_ACCESS_KEY'])
-      end
-    }
-  }
-  ```
+require 'faraday_middleware/aws_sigv4'
 
-### Index definition
+Chewy.settings = {
+  host: 'http://my-es-instance-on-aws.us-east-1.es.amazonaws.com:80',
+  port: 80, # 443 for https host
+  transport_options: {
+    headers: { content_type: 'application/json' },
+    proc: -> (f) do
+        f.request :aws_sigv4,
+                  service: 'es',
+                  region: 'us-east-1',
+                  access_key_id: ENV['AWS_ACCESS_KEY'],
+                  secret_access_key: ENV['AWS_SECRET_ACCESS_KEY']
+    end
+  }
+}
+```
+
+#### Index definition
 
 1. Create `/app/chewy/users_index.rb`
 
@@ -159,41 +273,38 @@ If you would like to use AWS's ElasticSearch using an IAM user policy, you will 
   end
   ```
 
-2. Add one or more types mapping
+2. Define index scope (you can omit this part if you don't need to specify a scope (i.e. use PORO objects for import) or options)
 
   ```ruby
   class UsersIndex < Chewy::Index
-    define_type User.active # or just model instead_of scope: define_type User
+    index_scope User.active # or just model instead_of scope: index_scope User
   end
   ```
 
-  Newly-defined index type class is accessible via `UsersIndex.user` or `UsersIndex::User`
-
-3. Add some type mappings
+3. Add some mappings
 
   ```ruby
   class UsersIndex < Chewy::Index
-    define_type User.active.includes(:country, :badges, :projects) do
-      field :first_name, :last_name # multiple fields without additional options
-      field :email, analyzer: 'email' # Elasticsearch-related options
-      field :country, value: ->(user) { user.country.name } # custom value proc
-      field :badges, value: ->(user) { user.badges.map(&:name) } # passing array values to index
-      field :projects do # the same block syntax for multi_field, if `:type` is specified
-        field :title
-        field :description # default data type is `string`
-        # additional top-level objects passed to value proc:
-        field :categories, value: ->(project, user) { project.categories.map(&:name) if user.active? }
-      end
-      field :rating, type: 'integer' # custom data type
-      field :created, type: 'date', include_in_all: false,
-        value: ->{ created_at } # value proc for source object context
+    index_scope User.active.includes(:country, :badges, :projects)
+    field :first_name, :last_name # multiple fields without additional options
+    field :email, analyzer: 'email' # Elasticsearch-related options
+    field :country, value: ->(user) { user.country.name } # custom value proc
+    field :badges, value: ->(user) { user.badges.map(&:name) } # passing array values to index
+    field :projects do # the same block syntax for multi_field, if `:type` is specified
+      field :title
+      field :description # default data type is `text`
+      # additional top-level objects passed to value proc:
+      field :categories, value: ->(project, user) { project.categories.map(&:name) if user.active? }
     end
+    field :rating, type: 'integer' # custom data type
+    field :created, type: 'date', include_in_all: false,
+      value: ->{ created_at } # value proc for source object context
   end
   ```
 
   [See here for mapping definitions](https://www.elastic.co/guide/en/elasticsearch/reference/current/mapping.html).
 
-4. Add some index- and type-related settings. Analyzer repositories might be used as well. See `Chewy::Index.settings` docs for details:
+4. Add some index-related settings. Analyzer repositories might be used as well. See `Chewy::Index.settings` docs for details:
 
   ```ruby
   class UsersIndex < Chewy::Index
@@ -206,23 +317,22 @@ If you would like to use AWS's ElasticSearch using an IAM user policy, you will 
       }
     }
 
-    define_type User.active.includes(:country, :badges, :projects) do
-      root date_detection: false do
-        template 'about_translations.*', type: 'text', analyzer: 'standard'
+    index_scope User.active.includes(:country, :badges, :projects)
+    root date_detection: false do
+      template 'about_translations.*', type: 'text', analyzer: 'standard'
 
-        field :first_name, :last_name
-        field :email, analyzer: 'email'
-        field :country, value: ->(user) { user.country.name }
-        field :badges, value: ->(user) { user.badges.map(&:name) }
-        field :projects do
-          field :title
-          field :description
-        end
-        field :about_translations, type: 'object' # pass object type explicitly if necessary
-        field :rating, type: 'integer'
-        field :created, type: 'date', include_in_all: false,
-          value: ->{ created_at }
+      field :first_name, :last_name
+      field :email, analyzer: 'email'
+      field :country, value: ->(user) { user.country.name }
+      field :badges, value: ->(user) { user.badges.map(&:name) }
+      field :projects do
+        field :title
+        field :description
       end
+      field :about_translations, type: 'object' # pass object type explicitly if necessary
+      field :rating, type: 'integer'
+      field :created, type: 'date', include_in_all: false,
+        value: ->{ created_at }
     end
   end
   ```
@@ -230,45 +340,38 @@ If you would like to use AWS's ElasticSearch using an IAM user policy, you will 
   [See index settings here](https://www.elastic.co/guide/en/elasticsearch/reference/current/indices-update-settings.html).
   [See root object settings here](https://www.elastic.co/guide/en/elasticsearch/reference/current/dynamic-field-mapping.html).
 
-  See [mapping.rb](lib/chewy/type/mapping.rb) for more details.
+  See [mapping.rb](lib/chewy/index/mapping.rb) for more details.
 
 5. Add model-observing code
 
   ```ruby
   class User < ActiveRecord::Base
-    update_index('users#user') { self } # specifying index, type and back-reference
+    update_index('users') { self } # specifying index and back-reference
                                         # for updating after user save or destroy
   end
 
   class Country < ActiveRecord::Base
     has_many :users
 
-    update_index('users#user') { users } # return single object or collection
+    update_index('users') { users } # return single object or collection
   end
 
   class Project < ActiveRecord::Base
-    update_index('users#user') { user if user.active? } # you can return even `nil` from the back-reference
-  end
-
-  class Badge < ActiveRecord::Base
-    has_and_belongs_to_many :users
-
-    update_index('users') { users } # if index has only one type
-                                    # there is no need to specify updated type
+    update_index('users') { user if user.active? } # you can return even `nil` from the back-reference
   end
 
   class Book < ActiveRecord::Base
-    update_index(->(book) {"books#book_#{book.language}"}) { self } # dynamic index and type with proc.
-                                                                    # For book with language == "en"
-                                                                    # this code will generate `books#book_en`
+    update_index(->(book) {"books_#{book.language}"}) { self } # dynamic index name with proc.
+                                                               # For book with language == "en"
+                                                               # this code will generate `books_en`
   end
   ```
 
   Also, you can use the second argument for method name passing:
 
   ```ruby
-  update_index('users#user', :self)
-  update_index('users#user', :users)
+  update_index('users', :self)
+  update_index('users', :users)
   ```
 
   In the case of a belongs_to association you may need to update both associated objects, previous and current:
@@ -277,47 +380,28 @@ If you would like to use AWS's ElasticSearch using an IAM user policy, you will 
   class City < ActiveRecord::Base
     belongs_to :country
 
-    update_index('cities#city') { self }
-    update_index 'countries#country' do
-      # For the latest active_record changed values are
-      # already in `previous_changes` hash,
-      # but for mongoid you have to use `changes` hash
+    update_index('cities') { self }
+    update_index 'countries' do
       previous_changes['country_id'] || country
     end
   end
   ```
 
-  You can observe Sequel models in the same way as ActiveRecord:
+### Default import options
 
-  ```ruby
-  class User < Sequel::Model
-    update_index('users#user') { self }
-  end
-  ```
-
-  However, to make it work, you must load the chewy plugin into Sequel model:
-
-  ```ruby
-  Sequel::Model.plugin :chewy_observe  # for all models, or...
-  User.plugin :chewy_observe           # just for User
-  ```
-
-### Type default import options
-
-Every type has `default_import_options` configuration to specify, suddenly, default import options:
+Every index has `default_import_options` configuration to specify, suddenly, default import options:
 
 ```ruby
 class ProductsIndex < Chewy::Index
-  define_type Post.includes(:tags) do
-    default_import_options batch_size: 100, bulk_size: 10.megabytes, refresh: false
+  index_scope Post.includes(:tags)
+  default_import_options batch_size: 100, bulk_size: 10.megabytes, refresh: false
 
-    field :name
-    field :tags, value: -> { tags.map(&:name) }
-  end
+  field :name
+  field :tags, value: -> { tags.map(&:name) }
 end
 ```
 
-See [import.rb](lib/chewy/type/import.rb) for available options.
+See [import.rb](lib/chewy/index/import.rb) for available options.
 
 ### Multi (nested) and object field types
 
@@ -337,24 +421,12 @@ To define a multi field you have to specify any type except for `object` or `nes
 ```ruby
 field :full_name, type: 'text', value: ->{ full_name.strip } do
   field :ordered, analyzer: 'ordered'
-  field :untouched, index: 'not_analyzed'
+  field :untouched, type: 'keyword'
 end
 ```
 
 The `value:` option for internal fields will no longer be effective.
 
-### Parent and children types
-
-To define [parent](https://www.elastic.co/guide/en/elasticsearch/guide/current/parent-child-mapping.html) type for a given index_type, you can include root options for the type where you can specify parent_type and parent_id
-
-```ruby
-define_type User.includes(:account) do
-  root parent: 'account', parent_id: ->{ account_id } do
-    field :created_at, type: 'date'
-    field :task_id, type: 'integer'
-  end
-end
-```
 ### Geo Point fields
 
 You can use [Elasticsearch's geo mapping](https://www.elastic.co/guide/en/elasticsearch/reference/current/geo-point.html) with the `geo_point` field type, allowing you to query, filter and order by latitude and longitude. You can use the following hash format:
@@ -374,20 +446,36 @@ end
 
 See the section on *Script fields* for details on calculating distance in a search.
 
+### Join fields
+
+You can use a [join field](https://www.elastic.co/guide/en/elasticsearch/reference/current/parent-join.html)
+to implement parent-child relationships between documents.
+It [replaces the old `parent_id` based parent-child mapping](https://www.elastic.co/guide/en/elasticsearch/reference/current/removal-of-types.html#parent-child-mapping-types)
+
+To use it, you need to pass `relations` and `join` (with `type` and `id`) options:
+```ruby
+field :hierarchy_link, type: :join, relations: {question: %i[answer comment], answer: :vote, vote: :subvote}, join: {type: :comment_type, id: :commented_id}
+```
+assuming you have `comment_type` and `commented_id` fields in your model.
+
+Note that when you reindex a parent, its children and grandchildren will be reindexed as well.
+This may require additional queries to the primary database and to elastisearch.
+
+Also note that the join field doesn't support crutches (it should be a field directly defined on the model).
+
 ### Crutches™ technology
 
 Assume you are defining your index like this (product has_many categories through product_categories):
 
 ```ruby
 class ProductsIndex < Chewy::Index
-  define_type Product.includes(:categories) do
-    field :name
-    field :category_names, value: ->(product) { product.categories.map(&:name) } # or shorter just -> { categories.map(&:name) }
-  end
+  index_scope Product.includes(:categories)
+  field :name
+  field :category_names, value: ->(product) { product.categories.map(&:name) } # or shorter just -> { categories.map(&:name) }
 end
 ```
 
-Then the Chewy reindexing flow will look like the following pseudo-code (even in Mongoid):
+Then the Chewy reindexing flow will look like the following pseudo-code:
 
 ```ruby
 Product.includes(:categories).find_in_batches(1000) do |batch|
@@ -399,26 +487,23 @@ Product.includes(:categories).find_in_batches(1000) do |batch|
 end
 ```
 
-But in Rails 4.1 and 4.2 you may face a problem with slow associations (take a look at https://github.com/rails/rails/pull/19423). Also, there might be really complicated cases when associations are not applicable.
-
-Then you can replace Rails associations with Chewy Crutches™ technology:
+If you meet complicated cases when associations are not applicable you can replace Rails associations with Chewy Crutches™ technology:
 
 ```ruby
 class ProductsIndex < Chewy::Index
-  define_type Product do
-    crutch :categories do |collection| # collection here is a current batch of products
-      # data is fetched with a lightweight query without objects initialization
-      data = ProductCategory.joins(:category).where(product_id: collection.map(&:id)).pluck(:product_id, 'categories.name')
-      # then we have to convert fetched data to appropriate format
-      # this will return our data in structure like:
-      # {123 => ['sweets', 'juices'], 456 => ['meat']}
-      data.each.with_object({}) { |(id, name), result| (result[id] ||= []).push(name) }
-    end
-
-    field :name
-    # simply use crutch-fetched data as a value:
-    field :category_names, value: ->(product, crutches) { crutches.categories[product.id] }
+  index_scope Product
+  crutch :categories do |collection| # collection here is a current batch of products
+    # data is fetched with a lightweight query without objects initialization
+    data = ProductCategory.joins(:category).where(product_id: collection.map(&:id)).pluck(:product_id, 'categories.name')
+    # then we have to convert fetched data to appropriate format
+    # this will return our data in structure like:
+    # {123 => ['sweets', 'juices'], 456 => ['meat']}
+    data.each.with_object({}) { |(id, name), result| (result[id] ||= []).push(name) }
   end
+
+  field :name
+  # simply use crutch-fetched data as a value:
+  field :category_names, value: ->(product, crutches) { crutches[:categories][product.id] }
 end
 ```
 
@@ -440,22 +525,21 @@ So Chewy Crutches™ technology is able to increase your indexing performance in
 
 ### Witchcraft™ technology
 
-One more experimental technology to increase import performance. As far as you know, chewy defines value proc for every imported field in mapping, so at the import time each of this procs is executed on imported object to extract result document to import. It would be great for performance to use one huge whole-document-returning proc instead. So basically the idea or Witchcraft™ technology is to compile a single document-returning proc from the type definition.
+One more experimental technology to increase import performance. As far as you know, chewy defines value proc for every imported field in mapping, so at the import time each of these procs is executed on imported object to extract result document to import. It would be great for performance to use one huge whole-document-returning proc instead. So basically the idea or Witchcraft™ technology is to compile a single document-returning proc from the index definition.
 
 ```ruby
-define_type Product do
-  witchcraft!
+index_scope Product
+witchcraft!
 
-  field :title
-  field :tags, value: -> { tags.map(&:name) }
-  field :categories do
-    field :name, value: -> (product, category) { category.name }
-    field :type, value: -> (product, category, crutch) { crutch.types[category.name] }
-  end
+field :title
+field :tags, value: -> { tags.map(&:name) }
+field :categories do
+  field :name, value: -> (product, category) { category.name }
+  field :type, value: -> (product, category, crutch) { crutch.types[category.name] }
 end
 ```
 
-The type definition above will be compiled to something close to:
+The index definition above will be compiled to something close to:
 
 ```ruby
 -> (object, crutches) do
@@ -485,7 +569,7 @@ Obviously not every type of definition might be compiled. There are some restric
   end
   ```
 
-However, it is quite possible that your type definition will be supported by Witchcraft™ technology out of the box in the most of the cases.
+However, it is quite possible that your index definition will be supported by Witchcraft™ technology out of the box in most of the cases.
 
 ### Raw Import
 
@@ -512,13 +596,12 @@ class LightweightProduct
   end
 end
 
-define_type Product do
-  default_import_options raw_import: ->(hash) {
-    LightweightProduct.new(hash)
-  }
+index_scope Product
+default_import_options raw_import: ->(hash) {
+  LightweightProduct.new(hash)
+}
 
-  field :created_at, 'datetime'
-end
+field :created_at, 'datetime'
 ```
 
 Also, you can pass `:raw_import` option to the `import` method explicitly.
@@ -529,6 +612,24 @@ By default, when you perform import Chewy checks whether an index exists and cre
 You can turn off this feature to decrease Elasticsearch hits count.
 To do so you need to set `skip_index_creation_on_import` parameter to `false` in your `config/chewy.yml`
 
+### Skip record fields during import
+
+You can use `ignore_blank: true` to skip fields that return `true` for the `.blank?` method:
+
+```ruby
+index_scope Country
+field :id
+field :cities, ignore_blank: true do
+  field :id
+  field :name
+  field :surname, ignore_blank: true
+  field :description
+end
+```
+
+#### Default values for different types
+
+By default `ignore_blank` is false on every type except `geo_point`.
 
 ### Journaling
 
@@ -542,7 +643,6 @@ Common journal record looks like this:
   "action": "index",
   "object_id": [1, 2, 3],
   "index_name": "...",
-  "type_name": "...",
   "created_at": "<timestamp>"
 }
 ```
@@ -568,28 +668,16 @@ Or as a default import option for an index:
 
 ```ruby
 class CityIndex
-  define_type City do
-    default_import_options journal: true
-  end
+  index_scope City
+  default_import_options journal: true
 end
 ```
 
 You may be wondering why do you need it? The answer is simple: not to lose the data.
 
-Imagine that you reset your index in a zero-downtime manner (to separate index), and at the meantime somebody keeps updating the data frequently (to old index). So all these actions will be written to the journal index and you'll be able to apply them after index reset using the `Chewy::Journal` interface.
+Imagine that you reset your index in a zero-downtime manner (to separate index), and in the meantime somebody keeps updating the data frequently (to old index). So all these actions will be written to the journal index and you'll be able to apply them after index reset using the `Chewy::Journal` interface.
 
-### Types access
-
-You can access index-defined types with the following API:
-
-```ruby
-UsersIndex::User # => UsersIndex::User
-UsersIndex.type_hash['user'] # => UsersIndex::User
-UsersIndex.type('user') # => UsersIndex::User
-UsersIndex.type('foo') # => raises error UndefinedType("Unknown type in UsersIndex: foo")
-UsersIndex.types # => [UsersIndex::User]
-UsersIndex.type_names # => ['user']
-```
+When enabled, journal can grow to enormous size, consider setting up cron job that would clean it occasionally using [`chewy:journal:clean` rake task](#chewyjournal).
 
 ### Index manipulation
 
@@ -603,25 +691,22 @@ UsersIndex.create! # use bang or non-bang methods
 UsersIndex.purge
 UsersIndex.purge! # deletes then creates index
 
-UsersIndex::User.import # import with 0 arguments process all the data specified in type definition
-                        # literally, User.active.includes(:country, :badges, :projects).find_in_batches
-UsersIndex::User.import User.where('rating > 100') # or import specified users scope
-UsersIndex::User.import User.where('rating > 100').to_a # or import specified users array
-UsersIndex::User.import [1, 2, 42] # pass even ids for import, it will be handled in the most effective way
-UsersIndex::User.import User.where('rating > 100'), update_fields: [:email] # if update fields are specified - it will update their values only with the `update` bulk action.
+UsersIndex.import # import with 0 arguments process all the data specified in index_scope definition
+UsersIndex.import User.where('rating > 100') # or import specified users scope
+UsersIndex.import User.where('rating > 100').to_a # or import specified users array
+UsersIndex.import [1, 2, 42] # pass even ids for import, it will be handled in the most effective way
+UsersIndex.import User.where('rating > 100'), update_fields: [:email] # if update fields are specified - it will update their values only with the `update` bulk action
+UsersIndex.import! # raises an exception in case of any import errors
 
-UsersIndex.import # import every defined type
-UsersIndex.import user: User.where('rating > 100') # import only active users to `user` type.
-  # Other index types, if exists, will be imported with default scope from the type definition.
 UsersIndex.reset! # purges index and imports default data for all types
 ```
 
-If the passed user is `#destroyed?`, or satisfies a `delete_if` type option, or the specified id does not exist in the database, import will perform delete from index action for this object.
+If the passed user is `#destroyed?`, or satisfies a `delete_if` index_scope option, or the specified id does not exist in the database, import will perform delete from index action for this object.
 
 ```ruby
-define_type User, delete_if: :deleted_at
-define_type User, delete_if: -> { deleted_at }
-define_type User, delete_if: ->(user) { user.deleted_at }
+index_scope User, delete_if: :deleted_at
+index_scope User, delete_if: -> { deleted_at }
+index_scope User, delete_if: ->(user) { user.deleted_at }
 ```
 
 See [actions.rb](lib/chewy/index/actions.rb) for more details.
@@ -632,13 +717,12 @@ Assume you've got the following code:
 
 ```ruby
 class City < ActiveRecord::Base
-  update_index 'cities#city', :self
+  update_index 'cities', :self
 end
 
 class CitiesIndex < Chewy::Index
-  define_type City do
-    field :name
-  end
+  index_scope City
+  field :name
 end
 ```
 
@@ -658,16 +742,6 @@ end
 
 Using this strategy delays the index update request until the end of the block. Updated records are aggregated and the index update happens with the bulk API. So this strategy is highly optimized.
 
-#### `:resque`
-
-This does the same thing as `:atomic`, but asynchronously using resque. The default queue name is `chewy`. Patch `Chewy::Strategy::Resque::Worker` for index updates improving.
-
-```ruby
-Chewy.strategy(:resque) do
-  City.popular.map(&:do_some_update_action!)
-end
-```
-
 #### `:sidekiq`
 
 This does the same thing as `:atomic`, but asynchronously using sidekiq. Patch `Chewy::Strategy::Sidekiq::Worker` for index updates improving.
@@ -676,6 +750,111 @@ This does the same thing as `:atomic`, but asynchronously using sidekiq. Patch `
 Chewy.strategy(:sidekiq) do
   City.popular.map(&:do_some_update_action!)
 end
+```
+
+The default queue name is `chewy`, you can customize it in settings: `sidekiq.queue_name`
+```
+Chewy.settings[:sidekiq] = {queue: :low}
+```
+
+#### `:lazy_sidekiq`
+
+This does the same thing as `:sidekiq`, but with lazy evaluation. Beware it does not allow you to use any non-persistent record state for indices and conditions because record will be re-fetched from database asynchronously using sidekiq. However for destroying records strategy will fallback to `:sidekiq` because it's not possible to re-fetch deleted records from database.
+
+The purpose of this strategy is to improve the response time of the code that should update indexes, as it does not only defer actual ES calls to a background job but `update_index` callbacks evaluation (for created and updated objects) too. Similar to `:sidekiq`, index update is asynchronous so this strategy cannot be used when data and index synchronization is required.
+
+```ruby
+Chewy.strategy(:lazy_sidekiq) do
+  City.popular.map(&:do_some_update_action!)
+end
+```
+
+The default queue name is `chewy`, you can customize it in settings: `sidekiq.queue_name`
+```
+Chewy.settings[:sidekiq] = {queue: :low}
+```
+
+#### `:delayed_sidekiq`
+
+It accumulates IDs of records to be reindexed during the latency window in Redis and then performs the reindexing of all accumulated records at once. 
+This strategy is very useful in the case of frequently mutated records. 
+It supports the `update_fields` option, so it will attempt to select just enough data from the database.
+
+Keep in mind, this strategy does not guarantee reindexing in the event of Sidekiq worker termination or an error during the reindexing phase. 
+This behavior is intentional to prevent continuous growth of Redis db.
+
+There are three options that can be defined in the index:
+```ruby
+class CitiesIndex...
+  strategy_config delayed_sidekiq: {
+    latency: 3,
+    margin: 2,
+    ttl: 60 * 60 * 24,
+    reindex_wrapper: ->(&reindex) {
+      ActiveRecord::Base.connected_to(role: :reading) { reindex.call }
+    }
+    # latency - will prevent scheduling identical jobs
+    # margin - main purpose is to cover db replication lag by the margin
+    # ttl - a chunk expiration time (in seconds)
+    # reindex_wrapper - lambda that accepts block to wrap that reindex process AR connection block.
+  }
+
+  ...
+end
+```
+
+Also you can define defaults in the `initializers/chewy.rb`
+```ruby
+Chewy.settings = {
+  strategy_config: {
+    delayed_sidekiq: {
+      latency: 3,
+      margin: 2,
+      ttl: 60 * 60 * 24,
+      reindex_wrapper: ->(&reindex) {
+        ActiveRecord::Base.connected_to(role: :reading) { reindex.call }
+      }
+    }
+  }
+}
+
+```
+or in `config/chewy.yml`
+```ruby
+  strategy_config:
+    delayed_sidekiq:
+      latency: 3
+      margin: 2
+      ttl: <%= 60 * 60 * 24 %>
+      # reindex_wrapper setting is not possible here!!! use the initializer instead
+```
+
+You can use the strategy identically to other strategies
+```ruby
+Chewy.strategy(:delayed_sidekiq) do
+  City.popular.map(&:do_some_update_action!)
+end
+```
+
+The default queue name is `chewy`, you can customize it in settings: `sidekiq.queue_name`
+```
+Chewy.settings[:sidekiq] = {queue: :low}
+```
+
+Explicit call of the reindex using `:delayed_sidekiq strategy`
+```ruby
+CitiesIndex.import([1, 2, 3], strategy: :delayed_sidekiq)
+```
+
+Explicit call of the reindex using `:delayed_sidekiq` strategy with `:update_fields` support
+```ruby
+CitiesIndex.import([1, 2, 3], update_fields: [:name], strategy: :delayed_sidekiq)
+```
+
+While running tests with delayed_sidekiq strategy and Sidekiq is using a real redis instance that is NOT cleaned up in between tests (via e.g. `Sidekiq.redis(&:flushdb)`), you'll want to cleanup some redis keys in between tests to avoid state leaking and flaky tests. Chewy provides a convenience method for that:
+```ruby
+# it might be a good idea to also add to your testing setup, e.g.: a rspec `before` hook
+Chewy::Strategy::DelayedSidekiq.clear_timechunks!
 ```
 
 #### `:active_job`
@@ -688,14 +867,9 @@ Chewy.strategy(:active_job) do
 end
 ```
 
-#### `:shoryuken`
-
-This does the same thing as `:atomic`, but asynchronously using shoryuken. Patch `Chewy::Strategy::Shoryuken::Worker` for index updates improving.
-
-```ruby
-Chewy.strategy(:shoryuken) do
-  City.popular.map(&:do_some_update_action!)
-end
+The default queue name is `chewy`, you can customize it in settings: `active_job.queue_name`
+```
+Chewy.settings[:active_job] = {queue: :low}
 ```
 
 #### `:urgent`
@@ -719,7 +893,9 @@ It is convenient for use in e.g. the Rails console with non-block notation:
 
 #### `:bypass`
 
-The bypass strategy simply silences index updates.
+When the bypass strategy is active the index will not be automatically updated on object save.
+
+For example, on `City.first.save!` the cities index would not be updated.
 
 #### Nesting
 
@@ -773,6 +949,12 @@ RSpec.configure do |config|
 end
 ```
 
+### Elasticsearch client options
+
+All connection options, except the `:prefix`, are passed to the `Elasticseach::Client.new` ([chewy/lib/chewy.rb](https://github.com/toptal/chewy/blob/f5bad9f83c21416ac10590f6f34009c645062e89/lib/chewy.rb#L153-L160)):
+
+Here's the relevant Elasticsearch documentation on the subject: https://rubydoc.info/gems/elasticsearch-transport#setting-hosts
+
 ### `ActiveSupport::Notifications` support
 
 Chewy has notifying the following events:
@@ -784,14 +966,14 @@ Chewy has notifying the following events:
 
 #### `import_objects.chewy` payload
 
-  * `payload[:type]`: currently imported type
+  * `payload[:index]`: currently imported index name
   * `payload[:import]`: imports stats, total imported and deleted objects count:
 
     ```ruby
     {index: 30, delete: 5}
     ```
 
-  * `payload[:errors]`: might not exists. Contains grouped errors with objects ids list:
+  * `payload[:errors]`: might not exist. Contains grouped errors with objects ids list:
 
     ```ruby
     {index: {
@@ -884,45 +1066,46 @@ ActiveSupport::Notifications.subscribe(/.chewy$/, ChewySubscriber.new)
 
 ### Search requests
 
-Long story short: there is a new DSL that supports ES2 and ES5, the previous DSL version (which supports ES1 and ES2) documentation was moved to [LEGACY_DSL.md](LEGACY_DSL.md).
-
-If you want to use the old DSL - simply do `Chewy.search_class = Chewy::Query` somewhere before indices are initialized.
-
-The new DSL is enabled by default, here is a quick introduction.
+Quick introduction.
 
 #### Composing requests
 
-The request DSL have the same chainable nature as AR or Mongoid ones. The main class is `Chewy::Search::Request`. It is possible to perform requests on behalf of indices or types:
+The request DSL have the same chainable nature as AR. The main class is `Chewy::Search::Request`.
 
 ```ruby
-PlaceIndex.query(match: {name: 'London'}) # returns documents of any type
-PlaceIndex::City.query(match: {name: 'London'}) # returns cities only.
+CitiesIndex.query(match: {name: 'London'})
 ```
 
-Main methods of the request DSL are: `query`, `filter` and `post_filter`, it is possible to pass pure query hashes or use `elasticsearch-dsl`. Also, there is an additional
+Main methods of the request DSL are: `query`, `filter` and `post_filter`, it is possible to pass pure query hashes or use `elasticsearch-dsl`.
 
 ```ruby
-PlaceIndex
+CitiesIndex
   .filter(term: {name: 'Bangkok'})
-  .query { match name: 'London' }
+  .query(match: {name: 'London'})
   .query.not(range: {population: {gt: 1_000_000}})
 ```
 
-See https://www.elastic.co/guide/en/elasticsearch/reference/current/query-dsl.html and https://github.com/elastic/elasticsearch-ruby/tree/master/elasticsearch-dsl for more details.
+You can query a set of indexes at once:
+
+```ruby
+CitiesIndex.indices(CountriesIndex).query(match: {name: 'Some'})
+```
+
+See https://www.elastic.co/guide/en/elasticsearch/reference/current/query-dsl.html and https://github.com/elastic/elasticsearch-dsl-ruby for more details.
 
 An important part of requests manipulation is merging. There are 4 methods to perform it: `merge`, `and`, `or`, `not`. See [Chewy::Search::QueryProxy](lib/chewy/search/query_proxy.rb) for details. Also, `only` and `except` methods help to remove unneeded parts of the request.
 
 Every other request part is covered by a bunch of additional methods, see [Chewy::Search::Request](lib/chewy/search/request.rb) for details:
 
 ```ruby
-PlaceIndex.limit(10).offset(30).order(:name, {population: {order: :desc}})
+CitiesIndex.limit(10).offset(30).order(:name, {population: {order: :desc}})
 ```
 
 Request DSL also provides additional scope actions, like `delete_all`, `exists?`, `count`, `pluck`, etc.
 
 #### Pagination
 
-The request DSL supports pagination with `Kaminari` and `WillPaginate`. An appropriate extension is enabled on initializtion if any of libraries is available. See [Chewy::Search](lib/chewy/search.rb) and [Chewy::Search::Pagination](lib/chewy/search/pagination/) namespace for details.
+The request DSL supports pagination with `Kaminari`. An extension is enabled on initialization if `Kaminari` is available. See [Chewy::Search](lib/chewy/search.rb) and [Chewy::Search::Pagination::Kaminari](lib/chewy/search/pagination/kaminari.rb) for details.
 
 #### Named scopes
 
@@ -941,8 +1124,8 @@ See [Chewy::Search::Scrolling](lib/chewy/search/scrolling.rb) for details.
 It is possible to load ORM/ODM source objects with the `objects` method. To provide additional loading options use `load` method:
 
 ```ruby
-PlacesIndex.load(scope: -> { active }).to_a # to_a returns `Chewy::Type` wrappers.
-PlacesIndex.load(scope: -> { active }).objects # An array of AR source objects.
+CitiesIndex.load(scope: -> { active }).to_a # to_a returns `Chewy::Index` wrappers.
+CitiesIndex.load(scope: -> { active }).objects # An array of AR source objects.
 ```
 
 See [Chewy::Search::Loader](lib/chewy/search/loader.rb) for more details.
@@ -950,22 +1133,11 @@ See [Chewy::Search::Loader](lib/chewy/search/loader.rb) for more details.
 In case when it is necessary to iterate through both of the wrappers and objects simultaneously, `object_hash` method helps a lot:
 
 ```ruby
-scope = PlacesIndex.load(scope: -> { active })
+scope = CitiesIndex.load(scope: -> { active })
 scope.each do |wrapper|
   scope.object_hash[wrapper]
 end
 ```
-
-#### Legacy DSL incompatibilities
-
-* Filters advanced block DSL is not supported anymore, `elasticsearch-dsl` is used instead.
-* Things like `query_mode` and `filter_mode` are in past, use advanced DSL to achieve similar behavior. See [Chewy::Search::QueryProxy](lib/chewy/search/query_proxy.rb) for details.
-* `preload` method is no more, the collection returned by scope doesn't depend on loading options, scope always returns `Chewy::Type` wrappers. To get ORM/ODM objects, use `#objects` method.
-* Some of the methods have changed their purpose: `only` was used to filter fields before, now it filters the scope. To filter fields use `source` or `stored_fields`.
-* `types!` method is no more, use `except(:types).types(...)`
-* Named aggregations are not supported, use named scopes instead.
-* A lot of query-level methods were not ported: everything that is related to boost and scoring. Use `query` manipulation to provide them.
-* `Chewy::Type#_object` returns nil always. Use `Chewy::Search::Response#object_hash` instead.
 
 ### Rake tasks
 
@@ -978,8 +1150,8 @@ Performs zero-downtime reindexing as described [here](https://www.elastic.co/blo
 ```bash
 rake chewy:reset # resets all the existing indices
 rake chewy:reset[users] # resets UsersIndex only
-rake chewy:reset[users,places] # resets UsersIndex and PlacesIndex
-rake chewy:reset[-users,places] # resets every index in the application except specified ones
+rake chewy:reset[users,cities] # resets UsersIndex and CitiesIndex
+rake chewy:reset[-users,cities] # resets every index in the application except specified ones
 ```
 
 #### `chewy:upgrade`
@@ -994,47 +1166,49 @@ See [Chewy::Stash::Specification](lib/chewy/stash.rb) and [Chewy::Index::Specifi
 ```bash
 rake chewy:upgrade # upgrades all the existing indices
 rake chewy:upgrade[users] # upgrades UsersIndex only
-rake chewy:upgrade[users,places] # upgrades UsersIndex and PlacesIndex
-rake chewy:upgrade[-users,places] # upgrades every index in the application except specified ones
+rake chewy:upgrade[users,cities] # upgrades UsersIndex and CitiesIndex
+rake chewy:upgrade[-users,cities] # upgrades every index in the application except specified ones
 ```
 
 #### `chewy:update`
 
 It doesn't create indexes, it simply imports everything to the existing ones and fails if the index was not created before.
 
-Unlike `reset` or `upgrade` tasks, it is possible to pass type references to update the particular type. In index name is passed without the type specified, it will update all the types defined for this index.
-
 ```bash
 rake chewy:update # updates all the existing indices
 rake chewy:update[users] # updates UsersIndex only
-rake chewy:update[users,places#city] # updates the whole UsersIndex and PlacesIndex::City type
-rake chewy:update[-users,places#city] # updates every index in the application except every type defined in UsersIndex and the rest of the types defined in PlacesIndex
+rake chewy:update[users,cities] # updates UsersIndex and CitiesIndex
+rake chewy:update[-users,cities] # updates every index in the application except UsersIndex and CitiesIndex
 ```
 
 #### `chewy:sync`
 
-Provides a way to synchronize outdated indexes with the source quickly and without doing a full reset.
+Provides a way to synchronize outdated indexes with the source quickly and without doing a full reset. By default field `updated_at` is used to find outdated records, but this could be customized by `outdated_sync_field` as described at [Chewy::Index::Syncer](lib/chewy/index/syncer.rb).
 
-Arguments are similar to the ones taken by `chewy:update` task. It is possible to specify a particular type or a whole index.
+Arguments are similar to the ones taken by `chewy:update` task.
 
-See [Chewy::Type::Syncer](lib/chewy/type/syncer.rb) for more details.
+See [Chewy::Index::Syncer](lib/chewy/index/syncer.rb) for more details.
 
 ```bash
 rake chewy:sync # synchronizes all the existing indices
 rake chewy:sync[users] # synchronizes UsersIndex only
-rake chewy:sync[users,places#city] # synchronizes the whole UsersIndex and PlacesIndex::City type
-rake chewy:sync[-users,places#city] # synchronizes every index in the application except every type defined in UsersIndex and the rest of the types defined in PlacesIndex
+rake chewy:sync[users,cities] # synchronizes UsersIndex and CitiesIndex
+rake chewy:sync[-users,cities] # synchronizes every index in the application except except UsersIndex and CitiesIndex
 ```
 
 #### `chewy:deploy`
 
 This rake task is especially useful during the production deploy. It is a combination of `chewy:upgrade` and `chewy:sync` and the latter is called only for the indexes that were not reset during the first stage.
 
-It is not possible to specify any particular types/indexes for this task as it doesn't make much sense.
+It is not possible to specify any particular indexes for this task as it doesn't make much sense.
 
 Right now the approach is that if some data had been updated, but index definition was not changed (no changes satisfying the synchronization algorithm were done), it would be much faster to perform manual partial index update inside data migrations or even manually after the deploy.
 
 Also, there is always full reset alternative with `rake chewy:reset`.
+
+#### `chewy:create_missing_indexes`
+
+This rake task creates newly defined indexes in ElasticSearch and skips existing ones. Useful for production-like environments.
 
 #### Parallelizing rake tasks
 
@@ -1047,23 +1221,43 @@ If the number of processes is not specified explicitly - `parallel` gem tries to
 ```bash
 rake chewy:parallel:reset
 rake chewy:parallel:upgrade[4]
-rake chewy:parallel:update[4,places#city]
+rake chewy:parallel:update[4,cities]
 rake chewy:parallel:sync[4,-users]
 rake chewy:parallel:deploy[4] # performs parallel upgrade and parallel sync afterwards
 ```
 
 #### `chewy:journal`
 
-This namespace contains two tasks for the journal manipulations: `chewy:journal:apply` and `chewy:journal:clean`. Both are taking time as the first argument (optional for clean) and a list of indexes/types exactly as the tasks above. Time can be in any format parsable by ActiveSupport.
+This namespace contains two tasks for the journal manipulations: `chewy:journal:apply` and `chewy:journal:clean`. Both are taking time as the first argument (optional for clean) and a list of indexes exactly as the tasks above. Time can be in any format parsable by ActiveSupport.
 
 ```bash
 rake chewy:journal:apply["$(date -v-1H -u +%FT%TZ)"] # apply journaled changes for the past hour
 rake chewy:journal:apply["$(date -v-1H -u +%FT%TZ)",users] # apply journaled changes for the past hour on UsersIndex only
 ```
 
-### Rspec integration
+When the size of the journal becomes very large, the classical way of deletion would be obstructive and resource consuming. Fortunately, Chewy internally uses [delete-by-query](https://www.elastic.co/guide/en/elasticsearch/reference/7.17/docs-delete-by-query.html#docs-delete-by-query-task-api) ES function which supports async execution with batching and [throttling](https://www.elastic.co/guide/en/elasticsearch/reference/current/docs-delete-by-query.html#docs-delete-by-query-throttle).
 
-Just add `require 'chewy/rspec'` to your spec_helper.rb and you will get additional features: See [update_index.rb](lib/chewy/rspec/update_index.rb) for more details.
+The available options, which can be set by ENV variables, are listed below:
+* `WAIT_FOR_COMPLETION` - a boolean flag. It controls async execution. It waits by default. When set to `false` (`0`, `f`, `false` or `off` in any case spelling is accepted as `false`), Elasticsearch performs some preflight checks, launches the request, and returns a task reference you can use to cancel the task or get its status.
+* `REQUESTS_PER_SECOND` - float. The throttle for this request in sub-requests per second. No throttling is enforced by default.
+* `SCROLL_SIZE` - integer. The number of documents to be deleted in single sub-request. The default batch size is 1000.
+
+```bash
+rake chewy:journal:clean WAIT_FOR_COMPLETION=false REQUESTS_PER_SECOND=10 SCROLL_SIZE=5000
+```
+
+### RSpec integration
+
+Just add `require 'chewy/rspec'` to your spec_helper.rb and you will get additional features:
+
+[update_index](lib/chewy/rspec/update_index.rb) helper
+`mock_elasticsearch_response` helper to mock elasticsearch response
+`mock_elasticsearch_response_sources` helper to mock elasticsearch response sources
+`build_query` matcher to compare request and expected query (returns `true`/`false`)
+
+To use `mock_elasticsearch_response` and `mock_elasticsearch_response_sources` helpers add `include Chewy::Rspec::Helpers` to your tests.
+
+See [chewy/rspec/](lib/chewy/rspec/) for more details.
 
 ### Minitest integration
 
@@ -1072,6 +1266,14 @@ Add `require 'chewy/minitest'` to your test_helper.rb, and then for tests which 
 Since you can set `:bypass` strategy for test suites and manually handle import for the index and manually flush test indices using `Chewy.massacre`. This will help reduce unnecessary ES requests
 
 But if you require chewy to index/update model regularly in your test suite then you can specify `:urgent` strategy for documents indexing. Add `Chewy.strategy(:urgent)` to test_helper.rb.
+
+Also, you can use additional helpers:
+
+`mock_elasticsearch_response` to mock elasticsearch response
+`mock_elasticsearch_response_sources` to mock elasticsearch response sources
+`assert_elasticsearch_query` to compare request and expected query (returns `true`/`false`)
+
+See [chewy/minitest/](lib/chewy/minitest/) for more details.
 
 ### DatabaseCleaner
 
@@ -1082,11 +1284,40 @@ If you use `DatabaseCleaner` in your tests with [the `transaction` strategy](htt
 Chewy.use_after_commit_callbacks = !Rails.env.test?
 ```
 
-## TODO a.k.a coming soon:
+### Pre-request Filter
 
-* Typecasting support
-* update_all support
-* Maybe, closer ORM/ODM integration, creating index classes implicitly
+Should you need to inspect the query prior to it being dispatched to ElasticSearch during any queries, you can use the `before_es_request_filter`. `before_es_request_filter` is a callable object, as demonstrated below:
+
+```ruby
+Chewy.before_es_request_filter = -> (method_name, args, kw_args) { ... }
+```
+
+While using the `before_es_request_filter`, please consider the following:
+
+* `before_es_request_filter` acts as a simple proxy before any request made via the    `ElasticSearch::Client`. The arguments passed to this filter include:
+  * `method_name` -  The name of the method being called. Examples are search, count, bulk and etc.
+  * `args` and `kw_args` - These are the positional arguments provided in the method call.
+* The operation is synchronous, so avoid executing any heavy or time-consuming operations within the filter to prevent performance degradation.
+* The return value of the proc is disregarded. This filter is intended for inspection or modification of the query rather than generating a response.
+* Any exception raised inside the callback will propagate upward and halt the execution of the query. It is essential to handle potential errors adequately to ensure the stability of your search functionality.
+
+### Import scope clean-up behavior
+
+Whenever you set the `import_scope` for the index, in the case of ActiveRecord,
+options for order, offset and limit will be removed. You can set the behavior of
+chewy, before the clean-up itself.
+
+The default behavior is a warning sent to the Chewy logger (`:warn`). Another more
+restrictive option is raising an exception (`:raise`). Both options have a
+negative impact on performance since verifying whether the code uses any of
+these options requires building AREL query.
+
+To avoid the loading time impact, you can ignore the check (`:ignore`) before
+the clean-up.
+
+```
+Chewy.import_scope_cleanup_behavior = :ignore
+```
 
 ## Contributing
 
@@ -1097,9 +1328,14 @@ Chewy.use_after_commit_callbacks = !Rails.env.test?
 5. Push to the branch (`git push origin my-new-feature`)
 6. Create new Pull Request
 
-Use the following Rake tasks to control the Elasticsearch cluster while developing.
+Use the following Rake tasks to control the Elasticsearch cluster while developing, if you prefer native Elasticsearch installation over the dockerized one:
 
 ```bash
 rake elasticsearch:start # start Elasticsearch cluster on 9250 port for tests
 rake elasticsearch:stop # stop Elasticsearch
 ```
+
+## Copyright
+
+Copyright (c) 2013-2021 Toptal, LLC. See [LICENSE.txt](LICENSE.txt) for
+further details.

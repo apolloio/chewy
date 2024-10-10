@@ -1,22 +1,51 @@
 require 'chewy/search'
 require 'chewy/index/actions'
+require 'chewy/index/adapter/active_record'
+require 'chewy/index/adapter/object'
 require 'chewy/index/aliases'
+require 'chewy/index/crutch'
+require 'chewy/index/import'
+require 'chewy/index/mapping'
+require 'chewy/index/observe'
 require 'chewy/index/settings'
 require 'chewy/index/specification'
+require 'chewy/index/syncer'
+require 'chewy/index/witchcraft'
+require 'chewy/index/wrapper'
 
 module Chewy
   class Index
+    IMPORT_OPTIONS_KEYS = %i[
+      batch_size bulk_size consistency direct_import journal
+      pipeline raw_import refresh replication
+    ].freeze
+
+    STRATEGY_OPTIONS = {
+      delayed_sidekiq: %i[latency margin ttl reindex_wrapper]
+    }.freeze
+
     include Search
     include Actions
     include Aliases
+    include Import
+    include Mapping
+    include Observe
+    include Crutch
+    include Witchcraft
+    include Wrapper
 
     singleton_class.delegate :client, to: 'Chewy'
 
-    class_attribute :type_hash
-    self.type_hash = {}
+    class_attribute :adapter
+    self.adapter = Chewy::Index::Adapter::Object.new(:default)
+
+    class_attribute :index_scope_defined
 
     class_attribute :_settings
     self._settings = Chewy::Index::Settings.new
+
+    class_attribute :_default_import_options
+    self._default_import_options = {}
 
     class << self
       attr_reader :hosts_name
@@ -49,7 +78,8 @@ module Chewy
       #     UsersIndex.index_name(prefix: '', suffix: '2017') # => 'users_2017'
       #
       #   @param prefix [String] index name prefix, uses {.prefix} method by default
-      #   @param suffix [String] index name suffix, used for creating several indexes for the same alias during the zero-downtime reset
+      #   @param suffix [String] index name suffix, used for creating several indexes for the same
+      #     alias during the zero-downtime reset
       #   @raise [UndefinedIndex] if the base name is blank
       #   @return [String] result index name
       def index_name(suggest = nil, prefix: nil, suffix: nil)
@@ -57,7 +87,7 @@ module Chewy
           @base_name = suggest.to_s.presence
         else
           [
-            prefix || prefix_with_deprecation,
+            prefix || self.prefix,
             base_name,
             suffix
           ].reject(&:blank?).join('_')
@@ -86,6 +116,7 @@ module Chewy
       def base_name
         @base_name ||= name.sub(/Index\z/, '').demodulize.underscore if name
         raise UndefinedIndex if @base_name.blank?
+
         @base_name
       end
 
@@ -120,78 +151,30 @@ module Chewy
         Chewy.configuration[:prefix]
       end
 
-      # Defines type for the index. Arguments depends on adapter used. For
+      # Defines scope and options for the index. Arguments depends on adapter used. For
       # ActiveRecord you can pass model or scope and options
       #
       #   class CarsIndex < Chewy::Index
-      #     define_type Car do
-      #       ...
-      #     end # defines VehiclesIndex::Car type
+      #     index_scope Car
+      #     ...
       #   end
       #
-      # Type name might be passed in complicated cases:
-      #
-      #   class VehiclesIndex < Chewy::Index
-      #     define_type Vehicle.cars.includes(:manufacturer), name: 'cars' do
-      #        ...
-      #     end # defines VehiclesIndex::Cars type
-      #
-      #     define_type Vehicle.motocycles.includes(:manufacturer), name: 'motocycles' do
-      #        ...
-      #     end # defines VehiclesIndex::Motocycles type
-      #   end
-      #
-      # For plain objects:
+      # For plain objects you can completely omit this directive, unless you need to specify some options:
       #
       #   class PlanesIndex < Chewy::Index
-      #     define_type :plane do
-      #       ...
-      #     end # defines PlanesIndex::Plane type
+      #     ...
       #   end
       #
       # The main difference between using plain objects or ActiveRecord models for indexing
-      # is import. If you will call `CarsIndex::Car.import` - it will import all the cars
-      # automatically, while `PlanesIndex::Plane.import(my_planes)` requires import data to be
+      # is import. If you will call `CarsIndex.import` - it will import all the cars
+      # automatically, while `PlanesIndex.import(my_planes)` requires import data to be
       # passed.
       #
-      def define_type(target, options = {}, &block)
-        type_class = Chewy.create_type(self, target, options, &block)
-        self.type_hash = type_hash.merge(type_class.type_name => type_class)
-      end
+      def index_scope(target, options = {})
+        raise 'Index scope is already defined' if index_scope_defined?
 
-      # Types method has double usage.
-      # If no arguments are passed - it returns array of defined types:
-      #
-      #   UsersIndex.types # => [UsersIndex::Admin, UsersIndex::Manager, UsersIndex::User]
-      #
-      # If arguments are passed it treats like a part of chainable query DSL and
-      # adds types array for index to select.
-      #
-      #   UsersIndex.filters { name =~ 'ro' }.types(:admin, :manager)
-      #   UsersIndex.types(:admin, :manager).filters { name =~ 'ro' } # the same as the first example
-      #
-      def types(*args)
-        if args.present?
-          all.types(*args)
-        else
-          type_hash.values
-        end
-      end
-
-      # Returns defined types names:
-      #
-      #   UsersIndex.type_names # => ['admin', 'manager', 'user']
-      #
-      def type_names
-        type_hash.keys
-      end
-
-      # Returns named type:
-      #
-      #    UserIndex.type('admin') # => UsersIndex::Admin
-      #
-      def type(type_name)
-        type_hash.fetch(type_name) { raise UndefinedType, "Unknown type in #{name}: #{type_name}" }
+        self.adapter = Chewy.adapters.find { |klass| klass.accepts?(target) }.new(target, **options)
+        self.index_scope_defined = true
       end
 
       # Used as a part of index definition DSL. Defines settings:
@@ -270,33 +253,30 @@ module Chewy
         @specification ||= Specification.new(self)
       end
 
-      def derivable_index_name
-        ActiveSupport::Deprecation.warn '`Chewy::Index.derivable_index_name` is deprecated and will be removed soon, use `Chewy::Index.derivable_name` instead'
-        derivable_name
+      def default_import_options(params)
+        params.assert_valid_keys(IMPORT_OPTIONS_KEYS)
+        self._default_import_options = _default_import_options.merge(params)
       end
 
-      # Handling old default_prefix if it is not defined.
-      def method_missing(name, *args, &block) # rubocop:disable Style/MethodMissing
-        if name == :default_prefix
-          ActiveSupport::Deprecation.warn '`Chewy::Index.default_prefix` is deprecated and will be removed soon, use `Chewy::Index.prefix` instead'
-          prefix
-        else
-          super
+      def strategy_config(params = {})
+        @strategy_config ||= begin
+          config_struct = Struct.new(*STRATEGY_OPTIONS.keys).new
+
+          STRATEGY_OPTIONS.each_with_object(config_struct) do |(strategy, options), res|
+            res[strategy] = case strategy
+            when :delayed_sidekiq
+              Struct.new(*STRATEGY_OPTIONS[strategy]).new.tap do |config|
+                options.each do |option|
+                  config[option] = params.dig(strategy, option) || Chewy.configuration.dig(:strategy_config, strategy, option)
+                end
+
+                config[:reindex_wrapper] ||= ->(&reindex) { reindex.call } # default wrapper
+              end
+            else
+              raise NotImplementedError, "Unsupported strategy: '#{strategy}'"
+            end
+          end
         end
-      end
-
-      def prefix_with_deprecation
-        if respond_to?(:default_prefix)
-          ActiveSupport::Deprecation.warn '`Chewy::Index.default_prefix` is deprecated and will be removed soon, define `Chewy::Index.prefix` method instead'
-          default_prefix
-        else
-          prefix
-        end
-      end
-
-      def build_index_name(*args)
-        ActiveSupport::Deprecation.warn '`Chewy::Index.build_index_name` is deprecated and will be removed soon, use `Chewy::Index.index_name` instead'
-        index_name(args.extract_options!)
       end
     end
   end

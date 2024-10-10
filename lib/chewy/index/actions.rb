@@ -30,8 +30,8 @@ module Chewy
         # Suffixed index names might be used for zero-downtime mapping change, for example.
         # Description: (http://www.elasticsearch.org/blog/changing-mapping-with-zero-downtime/).
         #
-        def create(*args)
-          create!(*args)
+        def create(*args, **kwargs)
+          create!(*args, **kwargs)
         rescue Elasticsearch::Transport::Transport::Errors::BadRequest
           false
         end
@@ -74,7 +74,13 @@ module Chewy
         #   UsersIndex.delete '01-2014' # deletes `users_01-2014` index
         #
         def delete(suffix = nil)
-          result = client(@hosts_name).indices.delete index: index_name(suffix: suffix)
+          # Verify that the index_name is really the index_name and not an alias.
+          #
+          #   "The index parameter in the delete index API no longer accepts alias names.
+          #   Instead, it accepts only index names (or wildcards which will expand to matching indices)."
+          #   https://www.elastic.co/guide/en/elasticsearch/reference/6.8/breaking-changes-6.0.html#_delete_index_api_resolves_indices_expressions_only_against_indices
+          index_names = client(@hosts_name).indices.get_alias(index: index_name(suffix: suffix)).keys
+          result = client.indices.delete index: index_names.join(',')
           Chewy.wait_for_status if result
           result
           # es-ruby >= 1.0.10 handles Elasticsearch::Transport::Transport::Errors::NotFound
@@ -172,14 +178,18 @@ module Chewy
         def reset!(suffix = nil, apply_journal: true, journal: false, **import_options)
           result = if suffix.present?
             start_time = Time.now
-            indexes = self.indexes
+            indexes = self.indexes - [index_name]
             create! suffix, alias: false
 
             general_name = index_name
             suffixed_name = index_name(suffix: suffix)
 
             optimize_index_settings suffixed_name
-            result = import import_options.merge(suffix: suffix, journal: journal, refresh: !Chewy.reset_disable_refresh_interval)
+            result = import(**import_options.merge(
+              suffix: suffix,
+              journal: journal,
+              refresh: !Chewy.reset_disable_refresh_interval
+            ))
             original_index_settings suffixed_name
 
             delete if indexes.blank?
@@ -195,18 +205,63 @@ module Chewy
             result
           else
             purge!
-            import import_options.merge(journal: journal)
+            import(**import_options.merge(journal: journal))
           end
 
           specification.lock!
           result
         end
+        alias_method :reset, :reset!
 
         # A {Chewy::Journal} instance for the particular index
         #
         # @return [Chewy::Journal] journal instance
         def journal
           @journal ||= Chewy::Journal.new(self)
+        end
+
+        def clear_cache(args = {index: index_name})
+          client.indices.clear_cache(args)
+        end
+
+        def reindex(source: index_name, dest: index_name)
+          client.reindex(
+            {
+              body:
+                {
+                  source: {index: source},
+                  dest: {index: dest}
+                }
+            }
+          )
+        end
+
+        # Adds new fields to an existing data stream or index.
+        # Change the search settings of existing fields.
+        #
+        # @example
+        #   Chewy.client.update_mapping('cities', {properties: {new_field: {type: :text}}})
+        #
+        def update_mapping(name = index_name, body = root.mappings_hash)
+          client.indices.put_mapping(
+            index: name,
+            body: body
+          )['acknowledged']
+        end
+
+        # Performs missing and outdated objects synchronization for the current index.
+        #
+        # @example
+        #   UsersIndex.sync
+        #
+        # @see Chewy::Index::Syncer
+        # @param parallel [true, Integer, Hash] options for parallel execution or the number of processes
+        # @return [Hash{Symbol, Object}, nil] a number of missing and outdated documents re-indexed and their ids,
+        #   nil in case of errors
+        def sync(parallel: nil)
+          syncer = Syncer.new(self, parallel: parallel)
+          count = syncer.perform
+          {count: count, missing: syncer.missing_ids, outdated: syncer.outdated_ids} if count
         end
 
       private
@@ -234,6 +289,7 @@ module Chewy
 
         def index_settings(setting_name)
           return {} unless settings_hash.key?(:settings) && settings_hash[:settings].key?(:index)
+
           settings_hash[:settings][:index].slice(setting_name)
         end
       end

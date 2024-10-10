@@ -3,55 +3,51 @@ module Chewy
     include Singleton
 
     attr_accessor :settings, :logger,
-      # Default query compilation mode. `:must` by default.
-      # See Chewy::Query#query_mode for details
-      #
-      :query_mode,
-      # Default filters compilation mode. `:and` by default.
-      # See Chewy::Query#filter_mode for details
-      #
-      :filter_mode,
-      # Default post_filters compilation mode. `nil` by default.
-      # See Chewy::Query#post_filter_mode for details
-      #
-      :post_filter_mode,
-      # The first strategy in stack. `:base` by default.
-      # If you need to return to the previous chewy behavior -
-      # just set it to `:bypass`
-      #
-      :root_strategy,
-      # Default request strategy middleware, used in e.g
-      # Rails controllers. See Chewy::Railtie::RequestStrategy
-      # for more info.
-      #
-      :request_strategy,
-      # Use after_commit callbacks for RDBMS instead of
-      # after_save and after_destroy. True by default. Useful
-      # in tests with transactional fixtures or transactional
-      # DatabaseCleaner strategy.
-      #
-      :use_after_commit_callbacks,
-      # Where Chewy expects to find index definitions
-      # within a Rails app folder.
-      :indices_path,
-      # Set index refresh_interval setting to -1 before reset and put the original value after.
-      # If setting not present, put back to default 1s
-      # https://www.elastic.co/guide/en/elasticsearch/reference/current/indices-update-settings.html
-      :reset_disable_refresh_interval,
-      # Set number_of_replicas to 0 before reset and put the original value after
-      # https://www.elastic.co/guide/en/elasticsearch/reference/current/indices-update-settings.html
-      :reset_no_replicas,
-      # Refresh or not when import async (sidekiq, resque, activejob)
-      :disable_refresh_async,
-      # Default options for root of Chewy type. Allows to set default options
-      # for type mappings like `_all`.
-      :default_root_options,
-      # Default field type for any field in any Chewy type. Defaults to 'string'.
-      :default_field_type
+                  # The first strategy in stack. `:base` by default.
+                  # If you need to return to the previous chewy behavior -
+                  # just set it to `:bypass`
+                  #
+                  :root_strategy,
+                  # Default request strategy middleware, used in e.g
+                  # Rails controllers. See Chewy::Railtie::RequestStrategy
+                  # for more info.
+                  #
+                  :request_strategy,
+                  # Rails console strategy, `:urgent` by default.
+                  #
+                  :console_strategy,
+                  # Use after_commit callbacks for RDBMS instead of
+                  # after_save and after_destroy. True by default. Useful
+                  # in tests with transactional fixtures or transactional
+                  # DatabaseCleaner strategy.
+                  #
+                  :use_after_commit_callbacks,
+                  # Where Chewy expects to find index definitions
+                  # within a Rails app folder.
+                  :indices_path,
+                  # Set index refresh_interval setting to -1 before reset and put the original value after.
+                  # If setting not present, put back to default 1s
+                  # https://www.elastic.co/guide/en/elasticsearch/reference/current/indices-update-settings.html
+                  :reset_disable_refresh_interval,
+                  # Set number_of_replicas to 0 before reset and put the original value after
+                  # https://www.elastic.co/guide/en/elasticsearch/reference/current/indices-update-settings.html
+                  :reset_no_replicas,
+                  # Refresh or not when import async (sidekiq, lazy_sidekiq, activejob)
+                  :disable_refresh_async,
+                  # Default options for root of Chewy type. Allows to set default options
+                  # for type mappings like `_all`.
+                  :default_root_options,
+                  # Default field type for any field in any Chewy type. Defaults to 'text'.
+                  :default_field_type,
+                  # Callback called on each search request to be done into ES
+                  :before_es_request_filter,
+                  # Behavior when import scope for index includes order, offset or limit.
+                  # Can be :ignore, :warn, :raise. Defaults to :warn
+                  :import_scope_cleanup_behavior
 
     attr_reader :transport_logger, :transport_tracer,
-      # Chewy search request DSL base class, used by every index.
-      :search_class
+                # Chewy search request DSL base class, used by every index.
+                :search_class
 
     def self.delegated
       public_instance_methods - superclass.public_instance_methods - Singleton.public_instance_methods
@@ -59,10 +55,9 @@ module Chewy
 
     def initialize
       @settings = {}
-      @query_mode = :must
-      @filter_mode = :and
       @root_strategy = :base
       @request_strategy = :atomic
+      @console_strategy = :urgent
       @use_after_commit_callbacks = true
       @reset_disable_refresh_interval = false
       @reset_no_replicas = false
@@ -70,21 +65,18 @@ module Chewy
       @indices_path = 'app/chewy'
       @default_root_options = {}
       @default_field_type = 'text'.freeze
-      self.search_class = Chewy::Search::Request
+      @import_scope_cleanup_behavior = :warn
+      @search_class = build_search_class(Chewy::Search::Request)
     end
 
     def transport_logger=(logger)
-      Chewy.client.transport.logger = logger
+      Chewy.client.transport.transport.logger = logger
       @transport_logger = logger
     end
 
     def transport_tracer=(tracer)
-      Chewy.client.transport.tracer = tracer
+      Chewy.client.transport.transport.tracer = tracer
       @transport_tracer = tracer
-    end
-
-    def search_class=(base)
-      @search_class = build_search_class(base)
     end
 
     # Chewy core configurations. There is two ways to set it up:
@@ -141,26 +133,24 @@ module Chewy
   private
 
     def yaml_settings
-      @yaml_settings ||= begin
-        if defined?(Rails::VERSION)
-          file = Rails.root.join('config', 'chewy.yml')
+      @yaml_settings ||= build_yaml_settings || {}
+    end
 
-          if File.exist?(file)
-            yaml = ERB.new(File.read(file)).result
-            hash = YAML.load(yaml) # rubocop:disable Security/YAMLLoad
-            hash[Rails.env].try(:deep_symbolize_keys) if hash
-          end
-        end || {}
-      end
+    def build_yaml_settings
+      return unless defined?(Rails::VERSION)
+
+      file = Rails.root.join('config', 'chewy.yml')
+
+      return unless File.exist?(file)
+
+      yaml = ERB.new(File.read(file)).result
+      hash = YAML.unsafe_load(yaml)
+      hash[Rails.env].try(:deep_symbolize_keys) if hash
     end
 
     def build_search_class(base)
       Class.new(base).tap do |search_class|
-        if defined?(::Kaminari)
-          search_class.send :include, Chewy::Search::Pagination::Kaminari
-        elsif defined?(::WillPaginate)
-          search_class.send :include, Chewy::Search::Pagination::WillPaginate
-        end
+        search_class.send :include, Chewy::Search::Pagination::Kaminari if defined?(::Kaminari)
       end
     end
   end

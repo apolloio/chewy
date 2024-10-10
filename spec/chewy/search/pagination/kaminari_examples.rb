@@ -5,10 +5,8 @@ shared_examples :kaminari do |request_base_class|
 
   before do
     stub_index(:products) do
-      define_type(:product) do
-        field :name
-        field :age, type: 'integer'
-      end
+      field :name
+      field :age, type: 'integer'
     end
   end
 
@@ -25,8 +23,8 @@ shared_examples :kaminari do |request_base_class|
   context do
     let(:data) { Array.new(10) { |i| {id: i.next.to_s, name: "Name#{i.next}", age: 10 * i.next}.stringify_keys! } }
 
-    before { ProductsIndex::Product.import!(data.map { |h| double(h) }) }
-    before { allow(::Kaminari.config).to receive_messages(default_per_page: 3) }
+    before { ProductsIndex.import!(data.map { |h| double(h) }) }
+    before { allow(Kaminari.config).to receive_messages(default_per_page: 3) }
 
     describe '#per, #page' do
       specify { expect(search.map { |e| e.attributes.except(*except_fields) }).to match_array(data) }
