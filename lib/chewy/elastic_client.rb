@@ -1,14 +1,16 @@
 module Chewy
   # Replacement for Chewy.client
   class ElasticClient
-    def self.build_es_client(configuration = Chewy.configuration)
+    def self.build_es_client(hosts = nil, configuration = Chewy.configuration)
       client_configuration = configuration.deep_dup
+      client_configuration[:hosts] = client_configuration[hosts] if hosts
       client_configuration.delete(:prefix) # used by Chewy, not relevant to Elasticsearch::Client
       block = client_configuration[:transport_options].try(:delete, :proc)
       ::Elasticsearch::Client.new(client_configuration, &block)
     end
 
-    def initialize(elastic_client = self.class.build_es_client)
+    def initialize(elastic_client = nil, hosts = nil)
+      elastic_client ||= self.class.build_es_client(hosts)
       @elastic_client = elastic_client
     end
 

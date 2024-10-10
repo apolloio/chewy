@@ -77,6 +77,10 @@ module Chewy
         @parameters ||= Parameters.new
       end
 
+      def set_x_opaque_id(x_opaque_id)
+        @x_opaque_id = x_opaque_id
+      end
+
       # Compare two scopes or scope with a collection of wrappers.
       # If other is a collection it performs the request to fetch
       # data from ES.
@@ -115,10 +119,10 @@ module Chewy
       end
 
       # ES request body
-      #
+      # @param replace_post_filter [true, false] whether to replace post_filter with filter
       # @return [Hash] request body
-      def render
-        @render ||= parameters.render
+      def render(replace_post_filter: false)
+        @render ||= parameters.render(replace_post_filter: replace_post_filter)
       end
 
       # Includes the class name and the result of rendering.
@@ -852,7 +856,9 @@ module Chewy
         if performed?
           total
         else
-          Chewy.client.count(only(WHERE_STORAGES).render)['count']
+          count_params = only(WHERE_STORAGES).render(replace_post_filter: true)
+          count_params.merge!({opaque_id: @x_opaque_id}) if @x_opaque_id
+          Chewy.client(_indices.first.hosts_name).count(count_params)['count']
         end
       rescue Elasticsearch::Transport::Transport::Errors::NotFound
         0
@@ -991,7 +997,7 @@ module Chewy
         )
         ActiveSupport::Notifications.instrument 'delete_query.chewy', notification_payload(request: request_body) do
           request_body[:body] = {query: {match_all: {}}} if request_body[:body].empty?
-          Chewy.client.delete_by_query(request_body)
+          Chewy.client(_indices.first.hosts_name).delete_by_query(request_body)
         end
       end
 
@@ -1034,7 +1040,8 @@ module Chewy
       def perform(additional = {})
         request_body = render.merge(additional)
         ActiveSupport::Notifications.instrument 'search_query.chewy', notification_payload(request: request_body) do
-          Chewy.client.search(request_body)
+          request_body.merge!({opaque_id: @x_opaque_id}) if @x_opaque_id
+          Chewy.client(_indices.first.hosts_name).search(request_body)
         rescue Elasticsearch::Transport::Transport::Errors::NotFound
           {}
         end
