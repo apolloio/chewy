@@ -44,6 +44,9 @@ module Chewy
     class_attribute :_settings
     self._settings = Chewy::Index::Settings.new
 
+    class_attribute :type_hash
+    self.type_hash = {}
+
     class_attribute :_default_import_options
     self._default_import_options = {}
 
@@ -100,6 +103,42 @@ module Chewy
       def set_hosts_name(hosts_name)
         @hosts_name = hosts_name
       end
+
+      # Types method has double usage.
+      # If no arguments are passed - it returns array of defined types:
+      #
+      #   UsersIndex.types # => [UsersIndex::Admin, UsersIndex::Manager, UsersIndex::User]
+      #
+      # If arguments are passed it treats like a part of chainable query DSL and
+      # adds types array for index to select.
+      #
+      #   UsersIndex.filters { name =~ 'ro' }.types(:admin, :manager)
+      #   UsersIndex.types(:admin, :manager).filters { name =~ 'ro' } # the same as the first example
+      #
+      def types(*args)
+        if args.present?
+          all.types(*args)
+        else
+          type_hash.values
+        end
+      end
+
+      # Returns defined types names:
+      #
+      #   UsersIndex.type_names # => ['admin', 'manager', 'user']
+      #
+      def type_names
+        type_hash.keys
+      end
+
+      # Returns named type:
+      #
+      #    UserIndex.type('admin') # => UsersIndex::Admin
+      #
+      def type(type_name)
+        type_hash.fetch(type_name) { raise UndefinedType, "Unknown type in #{name}: #{type_name}" }
+      end
+
 
       # Base name for the index. Uses the default value inferred from the
       # class name unless redefined.
