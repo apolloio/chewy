@@ -322,6 +322,11 @@ module Chewy
         type_class = Chewy.create_type(self, target, options, &block)
         self.type_hash = type_hash.merge(type_class.type_name => type_class)
       end
+
+      def type_name
+        adapter.type_name
+      end
+
     end
   end
 end
