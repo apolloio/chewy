@@ -100,7 +100,7 @@ module Chewy
     # Creates Chewy::Type ancestor defining index and adapter methods.
     #
     def create_type(index, target, options = {}, &block)
-      type = Class.new(Chewy::Type)
+      type = Class.new(Chewy::Index)
 
       adapter = adapters.find { |klass| klass.accepts?(target) }.new(target, **options)
 
