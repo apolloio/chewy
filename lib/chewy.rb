@@ -59,15 +59,15 @@ ActiveSupport.on_load(:active_record) do
   include Chewy::Index::Observe::ActiveRecordMethods
 end
 
-ActiveSupport.on_load(:mongoid) do
-  module Mongoid
-    module Document
-      module ClassMethods
-        include Chewy::Index::Observe::MongoidMethods
-      end
-    end
-  end
-end
+# ActiveSupport.on_load(:mongoid) do
+#   module Mongoid
+#     module Document
+#       module ClassMethods
+#         include Chewy::Index::Observe::MongoidMethods
+#       end
+#     end
+#   end
+# end
 
 module Chewy
   @adapters = [
