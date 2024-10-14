@@ -1,6 +1,7 @@
 require 'chewy/search'
 require 'chewy/index/actions'
 require 'chewy/index/adapter/active_record'
+require 'chewy/index/adapter/mongoid'
 require 'chewy/index/adapter/object'
 require 'chewy/index/aliases'
 require 'chewy/index/crutch'
