@@ -97,7 +97,6 @@ module Chewy
       # @return [{Symbol => Chewy::Search::Parameters::Storage}] storages from other parameters
       def merge!(other)
         other.storages.each do |name, storage|
-          modify!(name) { merge!(storage) }
           # Handle query-related storages with a specialized merge function
           if name.to_sym.in?([:query, :filter, :post_filter])
             merge_queries_and_filters(name, storage)
