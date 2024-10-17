@@ -570,9 +570,8 @@ module Chewy
       #   @param values [true, false, String, Symbol, Array<String, Symbol>]
       #   @return [Chewy::Search::Request]
       %i[source stored_fields].each do |name|
-        define_method name do |value, *values|
-          values << '_index_type'
-          modify(name) { update!([value, *values]) }
+        define_method(name) do |value, *values|
+          modify(name) { update!([value, *values, '_index_type']) }
         end
       end
 
