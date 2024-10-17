@@ -69,7 +69,7 @@ Metrics/ModuleLength:
 # Offense count: 18
 # Configuration parameters: IgnoredMethods.
 Metrics/PerceivedComplexity:
-  Max: 13
+  Max: 14
 
 # Offense count: 11
 # Configuration parameters: EnforcedStyle, CheckMethodNames, CheckSymbols, AllowedIdentifiers.

@@ -50,6 +50,7 @@ module Chewy
 
     class << self
       attr_reader :hosts_name
+
       # @overload index_name(suggest)
       #   If suggested name is passed, it is set up as the new base name for
       #   the index. Used for the index base name redefinition.
@@ -97,7 +98,7 @@ module Chewy
       # Sets the hosts name of the index. If hosts_name is nil, use the default
       # hosts in chewy.yml. Otherwise use the hosts with the specified name for
       # indexing/queries.
-      def set_hosts_name(hosts_name)
+      def es_cluster_host(hosts_name)
         @hosts_name = hosts_name
       end
 

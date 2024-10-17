@@ -77,7 +77,7 @@ module Chewy
         @parameters ||= Parameters.new
       end
 
-      def set_x_opaque_id(x_opaque_id)
+      def x_opaque_id(x_opaque_id)
         @x_opaque_id = x_opaque_id
       end
 

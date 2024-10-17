@@ -98,7 +98,7 @@ module Chewy
       def merge!(other)
         other.storages.each do |name, storage|
           # Handle query-related storages with a specialized merge function
-          if name.to_sym.in?([:query, :filter, :post_filter])
+          if name.to_sym.in? %i[query filter post_filter]
             merge_queries_and_filters(name, storage)
           else
             # For other types of storages, use a general purpose merge method
@@ -145,9 +145,7 @@ module Chewy
 
       def render_body(replace_post_filter: false)
         exceptions = %i[filter query none] + QUERY_STRING_STORAGES
-        if replace_post_filter
-          exceptions += %i[post_filter]
-        end
+        exceptions += %i[post_filter] if replace_post_filter
         body = @storages.except(*exceptions).values.inject({}) do |result, storage|
           result.merge!(storage.render || {})
         end
@@ -184,7 +182,6 @@ module Chewy
           {query: {bool: filter}}
         end
       end
-
 
     private
 
@@ -282,9 +279,7 @@ module Chewy
         else
           # Default merge if one is nil
           replacement_query = current_query || other_query
-          if replacement_query
-            storages[name].replace!(replacement_query)
-          end
+          storages[name].replace!(replacement_query) if replacement_query
         end
       end
 
