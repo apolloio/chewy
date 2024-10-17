@@ -40,7 +40,7 @@ module Chewy
             collection.is_a?(Array) &&
             !collection.empty? &&
             collection.all? { |item| item.is_a?(::Mongoid::Document) && item.__selected_fields.nil? }
-          options['direct_import'] = direct_import unless options[:direct_import].present?
+          options[:direct_import] = direct_import unless options[:direct_import].present?
           super
         end
 
