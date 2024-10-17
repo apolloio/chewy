@@ -113,19 +113,13 @@ module Chewy
       private
 
         def import_objects(collection, options)
-          direct_import = (default_scope.selector.empty? || @options[:searchable_proc]) &&
-            !options[:raw_import] &&
-            collection.is_a?(Array) &&
-            !collection.empty? &&
-            collection.all? { |item| item.is_a?(::Mongoid::Document) && item.__selected_fields.nil? }
-
           collection_ids = identify(collection)
           hash = collection_ids.map(&:to_s).zip(collection).to_h
 
           indexed = collection_ids.each_slice(options[:batch_size]).map do |ids|
             batch = if options[:raw_import]
               raw_default_scope_where_ids_in(ids, options[:raw_import])
-            elsif options[:direct_import] || direct_import
+            elsif options[:direct_import]
               hash.values_at(*ids.map(&:to_s))
             else
               default_scope_where_ids_in(ids)
