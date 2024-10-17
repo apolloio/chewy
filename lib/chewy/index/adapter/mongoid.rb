@@ -34,6 +34,16 @@ module Chewy
           end.all?
         end
 
+        def import_objects(collection, options)
+          direct_import = (default_scope.selector.empty? || @options[:searchable_proc]) &&
+            !options[:raw_import] &&
+            collection.is_a?(Array) &&
+            !collection.empty? &&
+            collection.all? { |item| item.is_a?(::Mongoid::Document) && item.__selected_fields.nil? }
+          options['direct_import'] = direct_import unless options[:direct_import].present?
+          super
+        end
+
         def primary_key
           :_id
         end
