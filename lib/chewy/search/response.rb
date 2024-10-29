@@ -39,10 +39,15 @@ module Chewy
         @max_score ||= hits_root['max_score']
       end
 
-      # Response `error` field. Returns `nil` if there is no error.
-      # @return [Hash, nil]
-      def error
-        @error ||= @body['error']
+      # Response `errors` field. Returns `nil` if there is no error.
+      # @return [Array, nil]
+      def errors
+        errors = Array(@body['errors'])
+        # there's another case when failures could be present in some shards, in that case es returns them
+        # in @body[_shards][failures] array
+        errors += Array(@body['_shards']['failures']) if @body['_shards']
+        # presence will return nil if array is empty
+        errors.compact.presence
       end
 
       # Duration of the request handling in ms according to ES.

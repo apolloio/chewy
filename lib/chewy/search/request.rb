@@ -46,7 +46,7 @@ module Chewy
 
       delegate :hits, :wrappers, :objects, :records, :documents,
         :object_hash, :record_hash, :document_hash,
-        :total, :max_score, :took, :timed_out?, :error, to: :response
+        :total, :max_score, :took, :timed_out?, :errors, to: :response
       delegate :each, :size, :to_a, :[], to: :wrappers
       alias_method :to_ary, :to_a
       alias_method :total_count, :total
@@ -992,7 +992,7 @@ module Chewy
               Chewy.client(_indices.first.hosts_name).search(request_body)
             rescue Elasticsearch::Transport::Transport::Errors::NotFound => error
               # passing error as a separate param down to the response, hence won't affect any other logic
-              { "error" => error }
+              { "errors" => [error] }
             end
           end
       end
