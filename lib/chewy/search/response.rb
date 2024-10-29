@@ -19,6 +19,12 @@ module Chewy
         @hits ||= hits_root['hits'] || []
       end
 
+      # Raw response body obtained from ES.
+      # @param [Hash, nil]
+      def body
+        @body
+      end
+
       # Response `total` field. Returns `0` if something went wrong.
       #
       # @return [Integer]
@@ -31,6 +37,12 @@ module Chewy
       # @return [Float]
       def max_score
         @max_score ||= hits_root['max_score']
+      end
+
+      # Response `error` field. Returns `nil` if there is no error.
+      # @return [Hash, nil]
+      def error
+        @error ||= @body['error']
       end
 
       # Duration of the request handling in ms according to ES.
