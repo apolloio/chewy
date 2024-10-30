@@ -992,7 +992,7 @@ module Chewy
               Chewy.client(_indices.first.hosts_name).search(request_body)
             rescue Elasticsearch::Transport::Transport::Errors::NotFound => error
               # passing error as a separate param down to the response, hence won't affect any other logic
-              { "errors" => [error] }
+              { "not_found_error" => error }
             end
           end
       end

@@ -40,14 +40,16 @@ module Chewy
       end
 
       # Response `errors` field. Returns `nil` if there is no error.
-      # @return [Array, nil]
+      # @return [Hash, nil]
       def errors
-        errors = Array(@body['errors'])
+        not_found_error = @body['not_found_error']
         # there's another case when failures could be present in some shards, in that case es returns them
         # in @body[_shards][failures] array
-        errors += Array(@body['_shards']['failures']) if @body['_shards']
-        # presence will return nil if array is empty
-        errors.compact.presence
+        shard_failures = @body['_shards']['failures'] if @body['_shards']
+        {
+          not_found_error: not_found_error,
+          shard_failures: shard_failures
+        }.compact.presence
       end
 
       # Duration of the request handling in ms according to ES.
