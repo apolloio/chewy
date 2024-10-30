@@ -20,7 +20,7 @@ module Chewy
       end
 
       # Raw response body obtained from ES.
-      # @param [Hash, nil]
+      # @return [Hash, nil]
       def body
         @body
       end
