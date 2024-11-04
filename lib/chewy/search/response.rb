@@ -19,6 +19,12 @@ module Chewy
         @hits ||= hits_root['hits'] || []
       end
 
+      # Raw response body obtained from ES.
+      # @return [Hash, nil]
+      def body
+        @body
+      end
+
       # Response `total` field. Returns `0` if something went wrong.
       #
       # @return [Integer]
@@ -31,6 +37,21 @@ module Chewy
       # @return [Float]
       def max_score
         @max_score ||= hits_root['max_score']
+      end
+
+      # Response `errors` field. Returns `nil` if there is no error.
+      # @return [Hash, nil]
+      def errors
+        return nil if @body.blank?
+
+        not_found_error = @body['not_found_error']
+        # there's another case when failures could be present in some shards, in that case es returns them
+        # in @body[_shards][failures] array
+        shard_failures = @body['_shards']['failures'] if @body['_shards']
+        {
+          not_found_error: not_found_error,
+          shard_failures: shard_failures
+        }.compact.presence
       end
 
       # Duration of the request handling in ms according to ES.
