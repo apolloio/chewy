@@ -119,7 +119,7 @@ module Chewy
       else
         'chewy_client'
       end
-      Chewy.current[thread_cache_key.to_sym] ||= Chewy::ElasticClient.new
+      Chewy.current[thread_cache_key.to_sym] ||= Chewy::ElasticClient.new(hosts)
     end
 
     # Sends wait_for_status request to ElasticSearch with status

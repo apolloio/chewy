@@ -9,9 +9,9 @@ module Chewy
       ::Elasticsearch::Client.new(client_configuration, &block)
     end
 
-    def initialize(elastic_client = nil, hosts = nil)
-      elastic_client ||= self.class.build_es_client(hosts)
-      @elastic_client = elastic_client
+    def initialize(hosts = nil)
+      @elastic_client ||= self.class.build_es_client(hosts)
+      @elastic_client
     end
 
   private
