@@ -42,6 +42,8 @@ module Chewy
       # Response `errors` field. Returns `nil` if there is no error.
       # @return [Hash, nil]
       def errors
+        return nil if @body.blank?
+
         not_found_error = @body['not_found_error']
         # there's another case when failures could be present in some shards, in that case es returns them
         # in @body[_shards][failures] array
