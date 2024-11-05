@@ -874,9 +874,8 @@ module Chewy
           count_params.merge!({opaque_id: @x_opaque_id}) if @x_opaque_id
           Chewy.client(_indices.first.hosts_name).count(count_params)['count']
         end
-      rescue Elasticsearch::Transport::Transport::Errors::NotFound => error
-        # passing error as a separate param down to the response, hence won't affect any other logic
-        { "not_found_error" => error }
+      rescue Elasticsearch::Transport::Transport::Errors::NotFound
+        0
       end
 
       # Checks if any of the document exist for this request. If
