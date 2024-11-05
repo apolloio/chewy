@@ -46,7 +46,7 @@ module Chewy
 
       delegate :hits, :wrappers, :objects, :records, :documents,
                :object_hash, :record_hash, :document_hash,
-               :total, :max_score, :took, :timed_out?, to: :response
+               :total, :max_score, :took, :timed_out?, :errors, to: :response
       delegate :each, :size, :to_a, :[], to: :wrappers
       alias_method :to_ary, :to_a
       alias_method :total_count, :total
@@ -79,6 +79,20 @@ module Chewy
 
       def x_opaque_id(x_opaque_id)
         @x_opaque_id = x_opaque_id
+      end
+
+      # Response `errors` field. Returns `nil` if there is no error.
+      # @return [Hash, nil]
+      def errors
+        return nil if @body.blank?
+        not_found_error = @body['not_found_error']
+        # there's another case when failures could be present in some shards, in that case es returns them
+        # in @body[_shards][failures] array
+        shard_failures = @body['_shards']['failures'] if @body['_shards']
+        {
+          not_found_error: not_found_error,
+          shard_failures: shard_failures
+        }.compact.presence
       end
 
       # Compare two scopes or scope with a collection of wrappers.
@@ -860,8 +874,9 @@ module Chewy
           count_params.merge!({opaque_id: @x_opaque_id}) if @x_opaque_id
           Chewy.client(_indices.first.hosts_name).count(count_params)['count']
         end
-      rescue Elasticsearch::Transport::Transport::Errors::NotFound
-        0
+      rescue Elasticsearch::Transport::Transport::Errors::NotFound => error
+        # passing error as a separate param down to the response, hence won't affect any other logic
+        { "not_found_error" => error }
       end
 
       # Checks if any of the document exist for this request. If
@@ -1042,8 +1057,9 @@ module Chewy
         ActiveSupport::Notifications.instrument 'search_query.chewy', notification_payload(request: request_body) do
           request_body.merge!({opaque_id: @x_opaque_id}) if @x_opaque_id
           Chewy.client(_indices.first.hosts_name).search(request_body)
-        rescue Elasticsearch::Transport::Transport::Errors::NotFound
-          {}
+        rescue Elasticsearch::Transport::Transport::Errors::NotFound => error
+          # passing error as a separate param down to the response, hence won't affect any other logic
+          { "not_found_error" => error }
         end
       end
 
