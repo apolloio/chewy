@@ -114,9 +114,7 @@ module Chewy
     #
     def client(hosts = nil)
       #   # We are changing this to support multiple clusters in chewy.
-      if hosts.is_a?(String)
-        hosts = hosts.to_sym
-      end
+      hosts = hosts.to_sym if hosts.is_a?(String)
       thread_cache_key = if hosts
         "chewy_client_#{hosts}"
       else
