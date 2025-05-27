@@ -25,10 +25,11 @@ module Chewy
           @index._crutches.key?(name) || super
         end
 
-        def [](name)
-          #Need to add changes here
+        def [](name, options = nil)
           execution_block = @index._crutches[:"#{name}"]
-          @crutches_instances[name] ||= if execution_block.arity == 2
+          @crutches_instances[name] ||= if execution_block.arity == 3
+            execution_block.call(@collection, self, options)
+          elsif execution_block.arity == 2
             execution_block.call(@collection, self)
           else
             execution_block.call(@collection)
