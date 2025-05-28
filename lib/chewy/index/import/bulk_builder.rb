@@ -77,7 +77,7 @@ module Chewy
 
         def reindex_descendants(root)
           descendants = load_descendants(root)
-          crutches = Chewy::Index::Crutch::Crutches.new @index, [root, *descendants]
+          crutches = Chewy::Index::Crutch::Crutches.new @index, [root, *descendants], update_fields: @fields
           descendants.flat_map do |object|
             reindex_entries(
               object,
@@ -241,7 +241,7 @@ module Chewy
           join_field_value = data_for(
             raw_object,
             fields: [join_field.to_sym], # build only the field that is needed
-            crutches: Chewy::Index::Crutch::Crutches.new(@index, [raw_object])
+            crutches: Chewy::Index::Crutch::Crutches.new(@index, [raw_object], update_fields: @fields)
           )[join_field]
 
           case join_field_value
