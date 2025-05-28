@@ -116,7 +116,7 @@ module Chewy
         # @param fields [Array<Symbol>] and array of fields to restrict the generated document
         # @return [Hash] a JSON-ready hash
         def compose(object, crutches = nil, fields: [])
-          crutches ||= Chewy::Index::Crutch::Crutches.new self, [object]
+          crutches ||= Chewy::Index::Crutch::Crutches.new self, [object], update_fields: fields
 
           if witchcraft? && root.children.present?
             cauldron(fields: fields).brew(object, crutches)
