@@ -9,10 +9,11 @@ module Chewy
       end
 
       class Crutches
-        def initialize(index, collection)
+        def initialize(index, collection, update_fields: [])
           @index = index
           @collection = collection
           @crutches_instances = {}
+          @update_fields = update_fields
         end
 
         def method_missing(name, *, **)
