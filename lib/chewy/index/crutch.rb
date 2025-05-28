@@ -26,10 +26,10 @@ module Chewy
           @index._crutches.key?(name) || super
         end
 
-        def [](name, update_fields = [])
+        def [](name)
           execution_block = @index._crutches[:"#{name}"]
           @crutches_instances[name] ||= if execution_block.arity == 3
-            execution_block.call(@collection, self, update_fields)
+            execution_block.call(@collection, self, @update_fields)
           elsif execution_block.arity == 2
             execution_block.call(@collection, self)
           else
