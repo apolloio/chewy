@@ -42,7 +42,7 @@ module Chewy
       private
 
         def crutches_for_index
-          @crutches_for_index ||= Chewy::Index::Crutch::Crutches.new @index, @to_index
+          @crutches_for_index ||= Chewy::Index::Crutch::Crutches.new @index, @to_index, update_fields: @fields
         end
 
         def index_entry(object)
