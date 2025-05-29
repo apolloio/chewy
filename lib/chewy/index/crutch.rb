@@ -9,6 +9,8 @@ module Chewy
       end
 
       class Crutches
+        attr_reader :update_fields
+
         def initialize(index, collection, update_fields: [])
           @index = index
           @collection = collection
